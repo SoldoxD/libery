@@ -1,0 +1,348 @@
+local OrionLib = {}
+OrionLib.ScreenGui = nil
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+function OrionLib:InitScreenGui()
+    if not self.ScreenGui then
+        self.ScreenGui = Instance.new("ScreenGui")
+        self.ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
+
+function OrionLib:MakeNotification(options)
+    self:InitScreenGui()
+    local notification = Instance.new("Frame")
+    notification.Size = UDim2.new(0, 200, 0, 50)
+    notification.Position = UDim2.new(1, 200, 0, 10) -- Start off-screen
+    notification.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    notification.Parent = self.ScreenGui
+    
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 5)
+    uiCorner.Parent = notification
+    
+    local title = Instance.new("TextLabel")
+    title.Text = options.Name or "Notification"
+    title.Size = UDim2.new(1, 0, 0, 20)
+    title.Position = UDim2.new(0, 0, 0, 5)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 16
+    title.Parent = notification
+    
+    local content = Instance.new("TextLabel")
+    content.Text = options.Content or ""
+    content.Size = UDim2.new(1, 0, 0, 20)
+    content.Position = UDim2.new(0, 0, 0, 25)
+    content.BackgroundTransparency = 1
+    content.TextColor3 = Color3.fromRGB(200, 200, 200)
+    content.TextSize = 14
+    content.Parent = notification
+    
+    if options.Image then
+        local image = Instance.new("ImageLabel")
+        image.Size = UDim2.new(0, 20, 0, 20)
+        image.Position = UDim2.new(0, 5, 0, 5)
+        image.BackgroundTransparency = 1
+        image.Image = options.Image
+        image.Parent = notification
+        title.Position = UDim2.new(0, 30, 0, 5)
+        title.Size = UDim2.new(1, -30, 0, 20)
+    end
+    
+    local tweenIn = TweenService:Create(notification, TweenInfo.new(0.5), {Position = UDim2.new(1, -210, 0, 10)})
+    tweenIn:Play()
+    
+    wait(options.Time or 5)
+    local tweenOut = TweenService:Create(notification, TweenInfo.new(0.5), {Position = UDim2.new(1, 200, 0, 10)})
+    tweenOut:Play()
+    tweenOut.Completed:Connect(function()
+        notification:Destroy()
+    end)
+end
+
+function OrionLib:MakeWindow(options)
+    self:InitScreenGui()
+    local window = {}
+    window.Frame = Instance.new("Frame")
+    window.Frame.Size = UDim2.new(0, 300, 0, 400)
+    window.Frame.Position = UDim2.new(0.5, -150, 0.5, -200)
+    window.Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    window.Frame.Parent = self.ScreenGui
+    window.Frame.Visible = false
+    
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 10)
+    uiCorner.Parent = window.Frame
+    
+    local titleBar = Instance.new("TextLabel")
+    titleBar.Text = options.Name or "Window"
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleBar.Font = Enum.Font.SourceSansBold
+    titleBar.TextSize = 18
+    titleBar.Parent = window.Frame
+    
+    local uiCornerTitle = Instance.new("UICorner")
+    uiCornerTitle.CornerRadius = UDim.new(0, 10)
+    uiCornerTitle.Parent = titleBar
+    
+    local dragging, dragStart, startPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = window.Frame.Position
+        end
+    end)
+    
+    titleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            local delta = input.Position - dragStart
+            window.Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    titleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Size = UDim2.new(1, 0, 0, 30)
+    tabContainer.Position = UDim2.new(0, 0, 0, 30)
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.Parent = window.Frame
+    
+    local uiListLayout = Instance.new("UIListLayout")
+    uiListLayout.FillDirection = Enum.FillDirection.Horizontal
+    uiListLayout.Parent = tabContainer
+    
+    local contentArea = Instance.new("Frame")
+    contentArea.Size = UDim2.new(1, 0, 1, -60)
+    contentArea.Position = UDim2.new(0, 0, 0, 60)
+    contentArea.BackgroundTransparency = 1
+    contentArea.Parent = window.Frame
+    
+    window.Tabs = {}
+    window.CurrentTab = nil
+    
+    function window:MakeTab(options)
+        local tab = {}
+        tab.Button = Instance.new("TextButton")
+        tab.Button.Text = options.Name or "Tab"
+        tab.Button.Size = UDim2.new(0, 100, 1, 0)
+        tab.Button.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        tab.Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tab.Button.Font = Enum.Font.SourceSans
+        tab.Button.TextSize = 16
+        tab.Button.Parent = tabContainer
+        
+        local uiCornerTab = Instance.new("UICorner")
+        uiCornerTab.CornerRadius = UDim.new(0, 5)
+        uiCornerTab.Parent = tab.Button
+        
+        if options.Icon then
+            local icon = Instance.new("ImageLabel")
+            icon.Size = UDim2.new(0, 20, 0, 20)
+            icon.Position = UDim2.new(0, 5, 0, 5)
+            icon.BackgroundTransparency = 1
+            icon.Image = options.Icon
+            icon.Parent = tab.Button
+            tab.Button.TextXAlignment = Enum.TextXAlignment.Left
+            tab.Button.Text = "  " .. tab.Button.Text
+        end
+        
+        tab.Content = Instance.new("ScrollingFrame")
+        tab.Content.Size = UDim2.new(1, 0, 1, 0)
+        tab.Content.BackgroundTransparency = 1
+        tab.Content.Parent = contentArea
+        tab.Content.Visible = false
+        tab.Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+        tab.Content.ScrollBarThickness = 5
+        
+        local uiListLayoutContent = Instance.new("UIListLayout")
+        uiListLayoutContent.Padding = UDim.new(0, 10)
+        uiListLayoutContent.Parent = tab.Content
+        uiListLayoutContent.SortOrder = Enum.SortOrder.LayoutOrder
+        
+        tab.Sections = {}
+        
+        function tab:AddSection(options)
+            local section = {}
+            section.Frame = Instance.new("Frame")
+            section.Frame.Size = UDim2.new(1, -10, 0, 0)
+            section.Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            section.Frame.Parent = tab.Content
+            section.Frame.LayoutOrder = #tab.Sections + 1
+            
+            local uiCornerSection = Instance.new("UICorner")
+            uiCornerSection.CornerRadius = UDim.new(0, 5)
+            uiCornerSection.Parent = section.Frame
+            
+            local sectionTitle = Instance.new("TextLabel")
+            sectionTitle.Text = options.Name or "Section"
+            sectionTitle.Size = UDim2.new(1, 0, 0, 20)
+            sectionTitle.BackgroundTransparency = 1
+            sectionTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+            sectionTitle.Font = Enum.Font.SourceSansBold
+            sectionTitle.TextSize = 16
+            sectionTitle.Parent = section.Frame
+            
+            local uiListLayoutSection = Instance.new("UIListLayout")
+            uiListLayoutSection.Padding = UDim.new(0, 5)
+            uiListLayoutSection.Parent = section.Frame
+            uiListLayoutSection.SortOrder = Enum.SortOrder.LayoutOrder
+            
+            section.Elements = {}
+            
+            function section:AddButton(options)
+                local button = Instance.new("TextButton")
+                button.Text = options.Name or "Button"
+                button.Size = UDim2.new(1, 0, 0, 30)
+                button.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+                button.TextColor3 = Color3.fromRGB(255, 255, 255)
+                button.Font = Enum.Font.SourceSans
+                button.TextSize = 16
+                button.Parent = section.Frame
+                button.LayoutOrder = #section.Elements + 1
+                
+                local uiCornerButton = Instance.new("UICorner")
+                uiCornerButton.CornerRadius = UDim.new(0, 5)
+                uiCornerButton.Parent = button
+                
+                button.Activated:Connect(options.Callback or function() end)
+                
+                table.insert(section.Elements, button)
+                section.Frame.Size = UDim2.new(1, -10, 0, uiListLayoutSection.AbsoluteContentSize.Y)
+                tab.Content.CanvasSize = UDim2.new(0, 0, 0, uiListLayoutContent.AbsoluteContentSize.Y)
+            end
+            
+            function section:AddSlider(options)
+                local sliderFrame = Instance.new("Frame")
+                sliderFrame.Size = UDim2.new(1, 0, 0, 30)
+                sliderFrame.BackgroundTransparency = 1
+                sliderFrame.Parent = section.Frame
+                sliderFrame.LayoutOrder = #section.Elements + 1
+                
+                local sliderLabel = Instance.new("TextLabel")
+                sliderLabel.Text = options.Name .. ": " .. (options.Default or options.Min or 0)
+                sliderLabel.Size = UDim2.new(0.7, 0, 1, 0)
+                sliderLabel.BackgroundTransparency = 1
+                sliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                sliderLabel.Font = Enum.Font.SourceSans
+                sliderLabel.TextSize = 16
+                sliderLabel.Parent = sliderFrame
+                
+                local sliderBar = Instance.new("Frame")
+                sliderBar.Size = UDim2.new(0.3, 0, 0.2, 0)
+                sliderBar.Position = UDim2.new(0.7, 0, 0.4, 0)
+                sliderBar.BackgroundColor3 = options.Color or Color3.fromRGB(50, 50, 70)
+                sliderBar.Parent = sliderFrame
+                
+                local uiCornerBar = Instance.new("UICorner")
+                uiCornerBar.CornerRadius = UDim.new(0, 5)
+                uiCornerBar.Parent = sliderBar
+                
+                local handle = Instance.new("Frame")
+                handle.Size = UDim2.new(0, 20, 0, 20)
+                handle.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+                handle.Parent = sliderBar
+                
+                local uiCornerHandle = Instance.new("UICorner")
+                uiCornerHandle.CornerRadius = UDim.new(0, 10)
+                uiCornerHandle.Parent = handle
+                
+                local min = options.Min or 0
+                local max = options.Max or 100
+                local default = options.Default or min
+                local increment = options.Increment or 1
+                local range = max - min
+                local initialPos = (default - min) / range
+                handle.Position = UDim2.new(initialPos, -10, 0, -5)
+                
+                local function updateValue()
+                    local pos = handle.Position.X.Scale
+                    local value = math.floor(min + pos * range / increment) * increment
+                    sliderLabel.Text = options.Name .. ": " .. value .. " " .. (options.ValueName or "")
+                    if options.Callback then
+                        options.Callback(value)
+                    end
+                end
+                
+                local dragging = false
+                handle.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = true
+                    end
+                end)
+                
+                handle.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = false
+                    end
+                end)
+                
+                UserInputService.InputChanged:Connect(function(input)
+                    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                        local mouseX = input.Position.X
+                        local barAbsPos = sliderBar.AbsolutePosition
+                        local barAbsSize = sliderBar.AbsoluteSize
+                        local relativeX = mouseX - barAbsPos.X
+                        local pos = math.clamp(relativeX / barAbsSize.X, 0, 1)
+                        handle.Position = UDim2.new(pos, -10, 0, -5)
+                        updateValue()
+                    end
+                end)
+                
+                table.insert(section.Elements, sliderFrame)
+                section.Frame.Size = UDim2.new(1, -10, 0, uiListLayoutSection.AbsoluteContentSize.Y)
+                tab.Content.CanvasSize = UDim2.new(0, 0, 0, uiListLayoutContent.AbsoluteContentSize.Y)
+            end
+            
+            table.insert(tab.Sections, section)
+            section.Frame.Size = UDim2.new(1, -10, 0, uiListLayoutSection.AbsoluteContentSize.Y)
+            tab.Content.CanvasSize = UDim2.new(0, 0, 0, uiListLayoutContent.AbsoluteContentSize.Y)
+            return section
+        end
+        
+        tab.Button.Activated:Connect(function()
+            if window.CurrentTab then
+                window.CurrentTab.Content.Visible = false
+                window.CurrentTab.Button.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+            end
+            tab.Content.Visible = true
+            tab.Button.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+            window.CurrentTab = tab
+        end)
+        
+        if #window.Tabs == 0 then
+            tab.Button:Activate()
+        end
+        table.insert(window.Tabs, tab)
+        return tab
+    end
+    
+    self.Window = window
+    return window
+end
+
+function OrionLib:Init()
+    if self.Window then
+        self.Window.Frame.Visible = true
+    end
+end
+
+function OrionLib:Destroy()
+    if self.ScreenGui then
+        self.ScreenGui:Destroy()
+        self.ScreenGui = nil
+    end
+end
+
+return OrionLib
