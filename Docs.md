@@ -278,7 +278,7 @@ updateElementColors(window)
 Below is a complete example demonstrating multiple components:
 
 ```lua
-local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/<your-username>/<your-repo>/main/SoldoGuiLib.lua"))()
+local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
 
 -- Create a window
 local window = GuiLibrary:CreateWindow("Demo GUI", UDim2.new(0, 500, 0, 300))
