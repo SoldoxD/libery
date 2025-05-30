@@ -59,6 +59,56 @@ local function createGradient(parent, colors, rotation)
     return gradient
 end
 
+-- Loader Animation
+local function createLoader(parent, size)
+    local loaderFrame = Instance.new("Frame")
+    loaderFrame.Size = UDim2.new(0, size, 0, size)
+    loaderFrame.Position = UDim2.new(0.5, -size/2, 0.5, -size/2)
+    loaderFrame.BackgroundTransparency = 1
+    loaderFrame.Parent = parent
+    
+    local dots = {}
+    local numDots = 8
+    local radius = size * 0.3
+    
+    for i = 1, numDots do
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 10, 0, 10)
+        dot.BackgroundColor3 = COLORS.ACCENT
+        dot.BorderSizePixel = 0
+        dot.Parent = loaderFrame
+        createCorner(dot, 5)
+        
+        local angle = (i - 1) * (2 * math.pi / numDots)
+        dot.Position = UDim2.new(
+            0.5, math.cos(angle) * radius,
+            0.5, math.sin(angle) * radius
+        )
+        
+        table.insert(dots, dot)
+    end
+    
+    -- Animate dots
+    spawn(function()
+        while loaderFrame.Parent do
+            for i, dot in ipairs(dots) do
+                createTween(dot, {
+                    Size = UDim2.new(0, 14, 0, 14),
+                    BackgroundTransparency = 0
+                }, 0.3):Play()
+                wait(0.1)
+                createTween(dot, {
+                    Size = UDim2.new(0, 10, 0, 10),
+                    BackgroundTransparency = 0.5
+                }, 0.3):Play()
+            end
+            wait(0.2)
+        end
+    end)
+    
+    return loaderFrame
+end
+
 -- Main GUI Creation
 function GuiLibrary:CreateWindow(title, size)
     title = title or "GUI Library"
@@ -71,15 +121,19 @@ function GuiLibrary:CreateWindow(title, size)
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     screenGui.Parent = game.CoreGui
     
+    -- Create loader
+    local loader = createLoader(screenGui, 100)
+    
     -- Main Frame
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = size
-    mainFrame.Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2)
+    mainFrame.Size = UDim2.new(0, 0, 0, 0)
+    mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     mainFrame.BackgroundColor3 = COLORS.PRIMARY
     mainFrame.BorderSizePixel = 0
     mainFrame.Active = true
     mainFrame.Draggable = true
+    mainFrame.Visible = false
     mainFrame.Parent = screenGui
     
     createCorner(mainFrame, 12)
@@ -98,7 +152,7 @@ function GuiLibrary:CreateWindow(title, size)
     -- Title Label
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -100, 1, 0)
+    titleLabel.Size = UDim2 разу(1, -140, 1, 0)
     titleLabel.Position = UDim2.new(0, 10, 0, 0)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
@@ -108,13 +162,28 @@ function GuiLibrary:CreateWindow(title, size)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = titleBar
     
+    -- Settings Button
+    local settingsButton = Instance.new("TextButton")
+    settingsButton.Name = "SettingsButton"
+    settingsButton.Size = UDim2.new(0, 30, 0, 30)
+    settingsButton.Position = UDim2.new(1, -70, 0, 5)
+    settingsButton.BackgroundColor3 = COLORS.SECONDARY
+    settingsButton.Text = "⚙️"
+    settingsButton.TextColor3 = COLORS.TEXT
+    settingsButton.TextSize = 14
+    settingsButton.Font = Enum.Font.GothamBold
+    settingsButton.BorderSizePixel = 0
+    settingsButton.Parent = titleBar
+    
+    createCorner(settingsButton, 6)
+    
     -- Close Button
     local closeButton = Instance.new("TextButton")
     closeButton.Name = "CloseButton"
     closeButton.Size = UDim2.new(0, 30, 0, 30)
     closeButton.Position = UDim2.new(1, -35, 0, 5)
     closeButton.BackgroundColor3 = COLORS.DANGER
-    closeButton.Text = "✕"
+    closeButton.Text = "❌"
     closeButton.TextColor3 = Color3.new(1, 1, 1)
     closeButton.TextSize = 14
     closeButton.Font = Enum.Font.GothamBold
@@ -170,14 +239,21 @@ function GuiLibrary:CreateWindow(title, size)
         if not isVisible then return end
         isVisible = false
         
-        -- Scale down animation
+        -- Improved hiding animation with fade and scale
         createTween(mainFrame, {
-            Size = UDim2.new(0, 0, 0, 0), 
-            Position = UDim2.new(0.5, 0, 0.5, 0),
-            Rotation = 90
-        }):Play()
+            Size = UDim2.new(0, size.X.Offset * 0.8, 0, size.Y.Offset * 0.8),
+            BackgroundTransparency = 0.7
+        }, ANIM_TIME * 0.5):Play()
+        wait(ANIM_TIME * 0.5)
         
-        wait(ANIM_TIME)
+        createTween(mainFrame, {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            BackgroundTransparency = 1,
+            Rotation = 45
+        }, ANIM_TIME * 0.5):Play()
+        
+        wait(ANIM_TIME * 0.5)
         mainFrame.Visible = false
     end
     
@@ -188,15 +264,43 @@ function GuiLibrary:CreateWindow(title, size)
         mainFrame.Visible = true
         mainFrame.Size = UDim2.new(0, 0, 0, 0)
         mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        mainFrame.Rotation = -90
+        mainFrame.BackgroundTransparency = 1
+        mainFrame.Rotation = -45
         
-        -- Scale up animation
+        -- Show with fade and scale
         createTween(mainFrame, {
-            Size = size, 
-            Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2),
+            Size = UDim2.new(0, size.X.Offset * 0.8, 0, size.Y.Offset * 0.8),
+            BackgroundTransparency = 0.3,
             Rotation = 0
-        }):Play()
+        }, ANIM_TIME * 0.5):Play()
+        wait(ANIM_TIME * 0.5)
+        
+        createTween(mainFrame, {
+            Size = size,
+            Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2),
+            BackgroundTransparency = 0
+        }, ANIM_TIME * 0.5):Play()
     end
+    
+    -- Settings button functionality
+    settingsButton.MouseButton1Click:Connect(function()
+        if window.Tabs["Settings"] then
+            local settingsTab = window.Tabs["Settings"]
+            if window.CurrentTab ~= "Settings" then
+                -- Trigger tab switching
+                settingsTab.Button:SimulateClick()
+            end
+        end
+    end)
+    
+    -- Hover effects for settings button
+    settingsButton.MouseEnter:Connect(function()
+        createTween(settingsButton, {BackgroundColor3 = COLORS.HOVER}):Play()
+    end)
+    
+    settingsButton.MouseLeave:Connect(function()
+        createTween(settingsButton, {BackgroundColor3 = COLORS.SECONDARY}):Play()
+    end)
     
     -- Close button functionality
     closeButton.MouseButton1Click:Connect(function()
@@ -204,17 +308,6 @@ function GuiLibrary:CreateWindow(title, size)
         wait(ANIM_TIME)
         screenGui:Destroy()
     end)
-    
-    -- Add toggle functionality to window
-    window.Hide = hideWindow
-    window.Show = showWindow
-    window.Toggle = function()
-        if isVisible then
-            hideWindow()
-        else
-            showWindow()
-        end
-    end
     
     -- Hover effects for close button
     closeButton.MouseEnter:Connect(function()
@@ -225,13 +318,30 @@ function GuiLibrary:CreateWindow(title, size)
         createTween(closeButton, {BackgroundColor3 = COLORS.DANGER}):Play()
     end)
     
+    -- Show loader first, then transition to main GUI
+    wait(1.5) -- Show loader for 1.5 seconds
+    loader:Destroy()
+    mainFrame.Visible = true
+    
     -- Entrance animation
-    mainFrame.Size = UDim2.new(0, 0, 0, 0)
-    mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    createTween(mainFrame, {Size = size, Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2)}):Play()
+    createTween(mainFrame, {
+        Size = size,
+        Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2),
+        Rotation = 0
+    }):Play()
     
     -- Auto-create settings tab
     self:CreateSettingsTab(window)
+    
+    window.Hide = hideWindow
+    window.Show = showWindow
+    window.Toggle = function()
+        if isVisible then
+            hideWindow()
+        else
+            showWindow()
+        end
+    end
     
     return window
 end
@@ -299,6 +409,23 @@ function GuiLibrary:CreateTab(window, name)
         tabContent.Visible = true
     end)
     
+    -- SimulateClick method for programmatic tab switching
+    function tabButton:SimulateClick()
+        if window.CurrentTab == name then return end
+        
+        -- Deactivate current tab
+        if window.CurrentTab and window.Tabs[window.CurrentTab] then
+            local currentTab = window.Tabs[window.CurrentTab]
+            createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED}):Play()
+            currentTab.Content.Visible = false
+        end
+        
+        -- Activate new tab
+        window.CurrentTab = name
+        createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT}):Play()
+        tabContent.Visible = true
+    end
+    
     -- Hover effects
     tabButton.MouseEnter:Connect(function()
         if window.CurrentTab ~= name then
@@ -314,7 +441,6 @@ function GuiLibrary:CreateTab(window, name)
     
     -- Auto-select first tab
     if not window.CurrentTab then
-        -- Manually trigger the tab selection logic
         window.CurrentTab = name
         createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT}):Play()
         tabContent.Visible = true
@@ -496,7 +622,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local currentValue = default or min
     local dragging = false
     
-    local function updateSlider(value)
+ RulerFunction updateSlider(value)
         currentValue = math.clamp(value, min, max)
         local percentage = (currentValue - min) / (max - min)
         
@@ -798,16 +924,16 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     local currentColor = defaultColor or Color3.new(1, 1, 1)
     
     colorDisplay.MouseButton1Click:Connect(function()
-        -- Simple color cycling for demo (in real implementation, you'd want a proper color picker)
+        -- Simple color cycling for demo
         local colors = {
-            Color3.new(1, 0, 0),     -- Red
-            Color3.new(0, 1, 0),     -- Green
-            Color3.new(0, 0, 1),     -- Blue
-            Color3.new(1, 1, 0),     -- Yellow
-            Color3.new(1, 0, 1),     -- Magenta
-            Color3.new(0, 1, 1),     -- Cyan
-            Color3.new(1, 1, 1),     -- White
-            Color3.new(0, 0, 0)      -- Black
+            Color3.new(1, 0, 0),
+            Color3.new(0, 1, 0),
+            Color3.new(0, 0, 1),
+            Color3.new(1, 1, 0),
+            Color3.new(1, 0, 1),
+            Color3.new(0, 1, 1),
+            Color3.new(1, 1, 1),
+            Color3.new(0, 0, 0)
         }
         
         local currentIndex = 1
@@ -917,7 +1043,7 @@ end
 -- Notification System
 function GuiLibrary:CreateNotification(title, message, duration, notifType)
     duration = duration or 3
-    notifType = notifType or "info" -- info, success, warning, error
+    notifType = notifType or "info"
     
     local colors = {
         info = COLORS.ACCENT,
