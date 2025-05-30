@@ -152,7 +152,7 @@ function GuiLibrary:CreateWindow(title, size)
     -- Title Label
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2 разу(1, -140, 1, 0)
+    titleLabel.Size = UDim2.new(1, -140, 1, 0)
     titleLabel.Position = UDim2.new(0, 10, 0, 0)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
@@ -182,7 +182,7 @@ function GuiLibrary:CreateWindow(title, size)
     closeButton.Name = "CloseButton"
     closeButton.Size = UDim2.new(0, 30, 0, 30)
     closeButton.Position = UDim2.new(1, -35, 0, 5)
-    closeButton.BackgroundColor3 = COLORS.DANGER
+    closeButton.BackgroundTransparency = 1
     closeButton.Text = "❌"
     closeButton.TextColor3 = Color3.new(1, 1, 1)
     closeButton.TextSize = 14
@@ -287,8 +287,18 @@ function GuiLibrary:CreateWindow(title, size)
         if window.Tabs["Settings"] then
             local settingsTab = window.Tabs["Settings"]
             if window.CurrentTab ~= "Settings" then
-                -- Trigger tab switching
-                settingsTab.Button:SimulateClick()
+                -- Directly switch to the Settings tab
+                local function switchToSettings()
+                    if window.CurrentTab and window.Tabs[window.CurrentTab] then
+                        local currentTab = window.Tabs[window.CurrentTab]
+                        createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED}):Play()
+                        currentTab.Content.Visible = false
+                    end
+                    window.CurrentTab = "Settings"
+                    createTween(settingsTab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT}):Play()
+                    settingsTab.Content.Visible = true
+                end
+                switchToSettings()
             end
         end
     end)
@@ -393,24 +403,7 @@ function GuiLibrary:CreateTab(window, name)
     window.Tabs[name] = tab
     
     -- Tab switching functionality
-    tabButton.MouseButton1Click:Connect(function()
-        if window.CurrentTab == name then return end
-        
-        -- Deactivate current tab
-        if window.CurrentTab and window.Tabs[window.CurrentTab] then
-            local currentTab = window.Tabs[window.CurrentTab]
-            createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED}):Play()
-            currentTab.Content.Visible = false
-        end
-        
-        -- Activate new tab
-        window.CurrentTab = name
-        createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT}):Play()
-        tabContent.Visible = true
-    end)
-    
-    -- SimulateClick method for programmatic tab switching
-    function tabButton:SimulateClick()
+    local function switchTab()
         if window.CurrentTab == name then return end
         
         -- Deactivate current tab
@@ -425,6 +418,8 @@ function GuiLibrary:CreateTab(window, name)
         createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT}):Play()
         tabContent.Visible = true
     end
+    
+    tabButton.MouseButton1Click:Connect(switchTab)
     
     -- Hover effects
     tabButton.MouseEnter:Connect(function()
@@ -622,7 +617,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local currentValue = default or min
     local dragging = false
     
- RulerFunction updateSlider(value)
+    local function updateSlider(value)
         currentValue = math.clamp(value, min, max)
         local percentage = (currentValue - min) / (max - min)
         
@@ -1113,7 +1108,7 @@ function GuiLibrary:CreateSettingsTab(window)
     
     -- UI Scale Slider
     self:CreateSlider(settingsTab, "UI Scale", 0.5, 2.0, 1.0, function(value)
-        createTween(window.MainFrame, {Size = UDim2.new(value, 0, value, 0)}, 0.2):Play()
+        createTween(window.MainFrame, {Size = UDim2.new(0, 600 * value, 0, 400 * value)}, 0.2):Play()
     end)
     
     -- Theme Color Picker
