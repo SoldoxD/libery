@@ -1433,7 +1433,7 @@ function GuiLibrary:CreateSettingsTab(window)
     
     window.Tabs[name] = settingsTab
     
-    self:CreateSection(settingsTab, "UI Settings")
+    self:CreateSection(settingsTab, "UI Settings                                                        |   Library by Soldo_io")
     
     self:CreateKeybind(settingsTab, "Toggle GUI", Enum.KeyCode.Insert, function()
         window.Toggle()
@@ -1460,7 +1460,7 @@ function GuiLibrary:CreateSettingsTab(window)
         end
     end)
     
-    self:CreateSection(settingsTab, "Performance                |   Library by Soldo_io")
+    self:CreateSection(settingsTab, "Performance                                                        |   Library by Soldo_io")
     
     self:CreateToggle(settingsTab, "Show FPS", false, function(state)
         if state and window.FPSLabel then
