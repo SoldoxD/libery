@@ -16,10 +16,10 @@ A modern, feature-rich GUI library for Roblox executors, built with Luau. This l
 - **Performance Monitoring**: Optional FPS display with color-coded performance indicators.
 - **Notification System**: Customizable notifications with different types (info, success, warning, error).
 
-## Installation
+## Loading
 
-1. **Download the Library**:
-   - Copy the contents of `SoldoGuiLib.lua` from this repository.
+1. **Download a Executer**:
+   - For example AWP or Velocity.  >  https://whatexpsare.online/
 
 2. **Add to Your Project**:
    - Paste the code into a Lua script in your Roblox executor or game environment.
@@ -27,9 +27,8 @@ A modern, feature-rich GUI library for Roblox executors, built with Luau. This l
 
 3. **Require the Library**:
    ```lua
-   local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/<your-username>/<your-repo>/main/SoldoGuiLib.lua"))()
+   local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
    ```
-   Replace `<your-username>` and `<your-repo>` with your GitHub username and repository name.
 
 ## Usage
 
