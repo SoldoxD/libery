@@ -91,6 +91,8 @@ local themes = {
 }
 
 -- Utility functions
+
+print("Gui Library Created by Discord: Soldo_io / https://github.com/SoldoxD/libery/tree/main")
 local function createTween(object, properties, time)
     time = time or ANIM_TIME
     local tweenInfo = TweenInfo.new(time, EASING_STYLE, EASING_DIRECTION)
