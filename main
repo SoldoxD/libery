@@ -1,4 +1,5 @@
 -- Advanced Roblox Luau GUI Library for Executors
+-- Made by Soldo / Discord: Soldo_io
 -- Created with modern animations and comprehensive components
 
 local GuiLibrary = {}
@@ -1459,7 +1460,7 @@ function GuiLibrary:CreateSettingsTab(window)
         end
     end)
     
-    self:CreateSection(settingsTab, "Performance")
+    self:CreateSection(settingsTab, "Performance                |   Library by Soldo_io")
     
     self:CreateToggle(settingsTab, "Show FPS", false, function(state)
         if state and window.FPSLabel then
