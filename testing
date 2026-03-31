@@ -1,7 +1,7 @@
 -- Advanced Roblox Luau GUI Library for Executors
 -- Made by Soldo / Discord: Soldo_io
 -- Created with modern animations and comprehensive components
--- 1
+-- 2
 
 local GuiLibrary = {}
 local TweenService = game:GetService("TweenService")
@@ -662,24 +662,21 @@ function GuiLibrary:CreateWindow(title, size)
         }, ANIM_TIME * 0.5)
     end
     
-    -- Settings button functionality
+    -- Settings button functionality (for hidden Settings tab)
     settingsButton.MouseButton1Click:Connect(function()
-        if window.Tabs["Settings"] then
-            local settingsTab = window.Tabs["Settings"]
-            if window.CurrentTab ~= "Settings" then
-                local function switchToSettings()
-                    if window.CurrentTab and window.Tabs[window.CurrentTab] then
-                        local currentTab = window.Tabs[window.CurrentTab]
-                        createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
-                        currentTab.Content.Visible = false
-                    end
-                    window.CurrentTab = "Settings"
-                    createTween(settingsTab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
-                    settingsTab.Content.Visible = true
-                end
-                switchToSettings()
+        local settingsTab = window.Tabs["Settings"]
+        if not settingsTab then return end
+        
+        if window.CurrentTab and window.Tabs[window.CurrentTab] then
+            local currentTab = window.Tabs[window.CurrentTab]
+            if currentTab.Button then
+                createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
             end
+            currentTab.Content.Visible = false
         end
+        
+        window.CurrentTab = "Settings"
+        settingsTab.Content.Visible = true
     end)
     
     -- Hover effects for settings button
@@ -1532,24 +1529,11 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
     notifGui:Destroy()
 end
 
--- Auto-create Settings tab (fixed version)
+-- Auto-create Hidden Settings tab (only accessible via gear button)
 function GuiLibrary:CreateSettingsTab(window)
     local name = "Settings"
     
-    -- Create the tab button and add it to the tab bar (so it's visible)
-    local tabButton = Instance.new("TextButton")
-    tabButton.Name = name .. "Tab"
-    tabButton.Size = UDim2.new(0, 100, 1, 0)
-    tabButton.BackgroundColor3 = COLORS.SECONDARY
-    tabButton.Text = name
-    tabButton.TextColor3 = COLORS.TEXT_MUTED
-    tabButton.TextSize = 12
-    tabButton.Font = Enum.Font.Gotham
-    tabButton.BorderSizePixel = 0
-    tabButton.Parent = window.TabsContainer   -- ← This was missing
-    
-    createCorner(tabButton, 6)
-    
+    -- Create content only (NO button added to tab bar)
     local tabContent = Instance.new("ScrollingFrame")
     tabContent.Name = name .. "Content"
     tabContent.Size = UDim2.new(1, 0, 1, 0)
@@ -1573,7 +1557,7 @@ function GuiLibrary:CreateSettingsTab(window)
     contentPadding.Parent = tabContent
     
     local settingsTab = {
-        Button = tabButton,
+        Button = nil,           -- No button in tab bar
         Content = tabContent,
         Name = name,
         Elements = {}
@@ -1581,7 +1565,7 @@ function GuiLibrary:CreateSettingsTab(window)
     
     window.Tabs[name] = settingsTab
     
-    -- Now create the actual settings content
+    -- Create settings content
     GuiLibrary:CreateSection(settingsTab, "UI Settings | Library by Soldo_io")
     
     GuiLibrary:CreateKeybind(settingsTab, "Toggle GUI", Enum.KeyCode.Insert, function()
@@ -1592,6 +1576,7 @@ function GuiLibrary:CreateSettingsTab(window)
         local newSize = UDim2.new(0, 600 * value, 0, 400 * value)
         window.CurrentSize = newSize
         createTween(window.MainFrame, {Size = newSize}, 0.2)
+        GuiLibrary.SaveConfig()
     end)
     
     GuiLibrary:CreateDropdown(settingsTab, "Theme", {"Dark", "Light", "Midnight", "Forest", "Ocean"}, function(theme)
@@ -1599,7 +1584,7 @@ function GuiLibrary:CreateSettingsTab(window)
             COLORS[key] = color
         end
         updateElementColors(window)
-        GuiLibrary.SaveConfig()   -- Save theme change
+        GuiLibrary.SaveConfig()
     end)
     
     GuiLibrary:CreateToggle(settingsTab, "Enable Animations", true, function(state)
@@ -1622,7 +1607,6 @@ function GuiLibrary:CreateSettingsTab(window)
     GuiLibrary:CreateToggle(settingsTab, "Show FPS", false, function(state)
         if state and window.FPSLabel then
             window.FPSLabel.Visible = true
-            -- FPS logic here (your existing code)
         elseif window.FPSLabel then
             window.FPSLabel.Visible = false
         end
@@ -1642,13 +1626,6 @@ function GuiLibrary:CreateSettingsTab(window)
         updateElementColors(window)
         GuiLibrary.SaveConfig()
     end)
-    
-    -- Make Settings tab the default visible one
-    if not window.CurrentTab then
-        window.CurrentTab = name
-        createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
-        tabContent.Visible = true
-    end
     
     return settingsTab
 end
