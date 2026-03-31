@@ -99,151 +99,19 @@ local autoSaveEnabled = false
 local currentPlaceId = tostring(game.PlaceId)
 
 local function ensureAutoSaveFolder()
-    if not isfolder(AUTO_SAVE_FOLDER) then
-        makefolder(AUTO_SAVE_FOLDER)
-    end
+    pcall(function()
+        if not isfolder(AUTO_SAVE_FOLDER) then
+            makefolder(AUTO_SAVE_FOLDER)
+        end
+    end)
 end
 
 local function getAutoSavePath()
     return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId .. ".json"
 end
 
-local function saveAutoConfig(window)
-    if not autoSaveEnabled then return end
-    ensureAutoSaveFolder()
-
-    local configData = {
-        Theme = "Dark",
-        UIScale = window.CurrentSize and (window.CurrentSize.X.Offset / 600) or 1.0,
-        AnimationsEnabled = (ANIM_TIME > 0.05),
-        Components = {}
-    }
-
-    for tabName, tab in pairs(window.Tabs or {}) do
-        for _, element in ipairs(tab.Elements or {}) do
-            local data = {Type = nil, Value = nil}
-
-            if element.Name:match("Toggle") then
-                local tb = element:FindFirstChild("TextButton")
-                if tb then
-                    local ind = tb:FindFirstChild("Frame")
-                    if ind then
-                        data.Type = "Toggle"
-                        data.Value = ind.Position.X.Scale > 0.5
-                    end
-                end
-            elseif element.Name:match("Slider") then
-                local vl = element:FindFirstChild("TextLabel", true)
-                if vl and vl.Name ~= "SliderLabel" then
-                    data.Type = "Slider"
-                    data.Value = tonumber(vl.Text) or 0
-                end
-            elseif element.Name:match("Dropdown") then
-                local db = element:FindFirstChild("TextButton")
-                if db then
-                    local selected = db.Text:match(":%s*(.+)$") or db.Text
-                    data.Type = "Dropdown"
-                    data.Value = selected
-                end
-            elseif element.Name:match("ColorPicker") then
-                local cd = element:FindFirstChild("TextButton")
-                if cd then
-                    data.Type = "ColorPicker"
-                    data.Value = {cd.BackgroundColor3.R, cd.BackgroundColor3.G, cd.BackgroundColor3.B}
-                end
-            elseif element.Name:match("Keybind") then
-                local kb = element:FindFirstChild("TextButton")
-                if kb then
-                    data.Type = "Keybind"
-                    data.Value = kb.Text
-                end
-            end
-
-            if data.Type then
-                table.insert(configData.Components, {
-                    Tab = tabName,
-                    ElementName = element.Name,
-                    Data = data
-                })
-            end
-        end
-    end
-
-    pcall(function()
-        writefile(getAutoSavePath(), HttpService:JSONEncode(configData))
-    end)
-end
-
-local function loadAutoConfig(window)
-    local path = getAutoSavePath()
-    if not isfile(path) then return false end
-
-    local success, configData = pcall(function()
-        return HttpService:JSONDecode(readfile(path))
-    end)
-
-    if not success or not configData then return false end
-
-    -- Apply global settings
-    if configData.UIScale then
-        local newSize = UDim2.new(0, 600 * configData.UIScale, 0, 400 * configData.UIScale)
-        window.CurrentSize = newSize
-        createTween(window.MainFrame, {Size = newSize}, 0.25)
-    end
-
-    if configData.AnimationsEnabled ~= nil then
-        ANIM_TIME = configData.AnimationsEnabled and 0.3 or 0.01
-    end
-
-    -- Restore component states
-    for _, entry in ipairs(configData.Components or {}) do
-        local tab = window.Tabs[entry.Tab]
-        if not tab then continue end
-        for _, element in ipairs(tab.Elements or {}) do
-            if element.Name == entry.ElementName then
-                local d = entry.Data
-                if d.Type == "Toggle" and d.Value ~= nil then
-                    local tb = element:FindFirstChild("TextButton")
-                    if tb then
-                        local ind = tb:FindFirstChild("Frame")
-                        if ind then
-                            local isOn = d.Value
-                            tb.BackgroundColor3 = isOn and COLORS.SUCCESS or COLORS.BORDER
-                            ind.Position = isOn and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-                        end
-                    end
-                elseif d.Type == "Slider" and d.Value then
-                    local vl = element:FindFirstChild("TextLabel", true)
-                    if vl and vl.Name ~= "SliderLabel" then
-                        vl.Text = tostring(d.Value)
-                    end
-                elseif d.Type == "Dropdown" and d.Value then
-                    local db = element:FindFirstChild("TextButton")
-                    if db then
-                        db.Text = db.Text:match("^.-:") .. " " .. d.Value
-                    end
-                elseif d.Type == "ColorPicker" and d.Value and #d.Value == 3 then
-                    local cd = element:FindFirstChild("TextButton")
-                    if cd then
-                        cd.BackgroundColor3 = Color3.new(d.Value[1], d.Value[2], d.Value[3])
-                    end
-                elseif d.Type == "Keybind" and d.Value then
-                    local kb = element:FindFirstChild("TextButton")
-                    if kb then
-                        kb.Text = d.Value
-                    end
-                end
-            end
-        end
-    end
-
-    updateElementColors(window)
-    return true
-end
-
 
 -- Utility functions
-
 print("Gui Library Created by Discord: Soldo_io / https://github.com/SoldoxD/libery/tree/main")
 local function createTween(object, properties, time)
     time = time or ANIM_TIME
@@ -488,6 +356,120 @@ local function createLoader(parent, size)
     return loaderFrame
 end
 
+local function saveConfig(window)
+
+    if not autoSaveEnabled then return end
+    ensureAutoSaveFolder()
+
+    local config = {
+        UIScale = window.CurrentSize and (window.CurrentSize.X.Offset / 600) or 1,
+        AnimationsEnabled = (ANIM_TIME > 0.05),
+        Components = {}
+    }
+
+    for _, tab in pairs(window.Tabs or {}) do
+        for _, element in ipairs(tab.Elements or {}) do
+            local id = element:GetAttribute("ElementID")
+            if not id then continue end
+
+            local data = {Type = nil, Value = nil}
+
+            if element.Name:match("Toggle") then
+                local tb = element:FindFirstChild("TextButton")
+                local ind = tb and tb:FindFirstChild("Frame")
+                if ind then
+                    data.Type = "Toggle"
+                    data.Value = ind.Position.X.Scale > 0.5
+                end
+            elseif element.Name:match("Slider") then
+                local valLabel = element:FindFirstChild("TextLabel", true)
+                if valLabel and valLabel.Name ~= "SliderLabel" then
+                    data.Type = "Slider"
+                    data.Value = tonumber(valLabel.Text) or 0
+                end
+            elseif element.Name:match("Dropdown") then
+                local db = element:FindFirstChild("TextButton")
+                if db then
+                    data.Type = "Dropdown"
+                    data.Value = db.Text:match(":%s*(.+)$") or db.Text
+                end
+            elseif element.Name:match("ColorPicker") then
+                local cd = element:FindFirstChild("TextButton")
+                if cd then
+                    data.Type = "ColorPicker"
+                    data.Value = {cd.BackgroundColor3.R, cd.BackgroundColor3.G, cd.BackgroundColor3.B}
+                end
+            elseif element.Name:match("Keybind") then
+                local kb = element:FindFirstChild("TextButton")
+                if kb then
+                    data.Type = "Keybind"
+                    data.Value = kb.Text
+                end
+            end
+
+            if data.Type then
+                table.insert(config.Components, {ID = id, Data = data})
+            end
+        end
+    end
+
+    pcall(function()
+        writefile(getAutoSavePath(), HttpService:JSONEncode(config))
+    end)
+end
+
+local function loadConfig(window)
+    local path = getAutoSavePath()
+    if not pcall(isfile, path) or not isfile(path) then return false end
+
+    local success, config = pcall(function()
+        return HttpService:JSONDecode(readfile(path))
+    end)
+    if not success or not config then return false end
+
+    -- Apply global settings
+    if config.UIScale then
+        local newSize = UDim2.new(0, 600 * config.UIScale, 0, 400 * config.UIScale)
+        window.CurrentSize = newSize
+        createTween(window.MainFrame, {Size = newSize}, 0.25)
+    end
+
+    if config.AnimationsEnabled ~= nil then
+        ANIM_TIME = config.AnimationsEnabled and 0.3 or 0.01
+    end
+
+    -- Restore components
+    for _, entry in ipairs(config.Components or {}) do
+        for _, tab in pairs(window.Tabs or {}) do
+            for _, element in ipairs(tab.Elements or {}) do
+                if element:GetAttribute("ElementID") == entry.ID then
+                    local d = entry.Data
+                    if d.Type == "Toggle" and d.Value ~= nil then
+                        local tb = element:FindFirstChild("TextButton")
+                        local ind = tb and tb:FindFirstChild("Frame")
+                        if ind then
+                            local isOn = d.Value
+                            tb.BackgroundColor3 = isOn and COLORS.SUCCESS or COLORS.BORDER
+                            ind.Position = isOn and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+                        end
+                    elseif d.Type == "Slider" and d.Value then
+                        local valLabel = element:FindFirstChild("TextLabel", true)
+                        if valLabel and valLabel.Name ~= "SliderLabel" then
+                            valLabel.Text = tostring(d.Value)
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+
+    updateElementColors(window)
+    return true
+end
+
+
+
 -- Main GUI Creation
 function GuiLibrary:CreateWindow(title, size)
     title = title or "GUI Library"
@@ -625,12 +607,10 @@ function GuiLibrary:CreateWindow(title, size)
         Tabs = {},
         CurrentTab = nil,
         CurrentSize = size,
-        FPSLabel = fpsLabel
+        FPSLabel = fpsLabel,
+        SaveConfig = function() saveConfig(window) end
     }
     
-    window.SaveAutoConfig = function() saveAutoConfig(window) end
-    window.LoadAutoConfig = function() loadAutoConfig(window) end
-
     -- Window hiding/showing functionality
     local isVisible = true
     
@@ -727,35 +707,26 @@ function GuiLibrary:CreateWindow(title, size)
     end)
     
     -- Show loader first, then transition to main GUI
-    wait(1.5)
+    task.wait(1.5)
     loader:Destroy()
     mainFrame.Visible = true
+    createTween(mainFrame, {Size = size, Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2)})
+
+    GuiLibrary:CreateSettingsTab(window)   -- Fixed self reference
     
-    createTween(mainFrame, {
-        Size = size,
-        Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2),
-        Rotation = 0
-    })
-    
-    -- Auto-create settings tab
-    self:CreateSettingsTab(window)
-    
-    spawn(function()
-        wait(1) -- small delay to let GUI fully build
-        loadAutoConfig(window)
+    -- Auto load config after GUI is built
+    task.spawn(function()
+        task.wait(0.5)
+        loadConfig(window)
     end)
-    
+
     window.Hide = hideWindow
     window.Show = showWindow
     window.Toggle = function()
-        if isVisible then
-            hideWindow()
-        else
-            showWindow()
-        end
+        if isVisible then hideWindow() else showWindow() end
     end
-    
-    updateElementColors(window)  
+
+    updateElementColors(window)
     return window
 end
 
@@ -897,7 +868,6 @@ function GuiLibrary:CreateButton(tab, text, callback)
     return button
 end
 
--- Toggle Component
 function GuiLibrary:CreateToggle(tab, text, default, callback)
     local toggleFrame = Instance.new("Frame")
     toggleFrame.Name = text .. "Toggle"
@@ -940,6 +910,10 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     
     local isToggled = default or false
     
+    -- Set unique ID for auto-save
+    local elementID = (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Toggle"
+    toggleFrame:SetAttribute("ElementID", elementID)
+    
     toggleButton.MouseButton1Click:Connect(function()
         isToggled = not isToggled
         
@@ -952,6 +926,9 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
         end
         
         if callback then callback(isToggled) end
+        if GuiLibrary.SaveConfig then   -- we'll add this
+            GuiLibrary.SaveConfig()
+        end
     end)
     
     toggleFrame.InputBegan:Connect(function(input)
@@ -969,6 +946,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     table.insert(tab.Elements, toggleFrame)
     return {Frame = toggleFrame, GetValue = function() return isToggled end}
 end
+
 
 -- Slider Component
 function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
@@ -1044,6 +1022,9 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         valueLabel.Text = string.format("%.1f", currentValue)
         
         if callback then callback(currentValue) end
+        if GuiLibrary.SaveConfig then
+            GuiLibrary.SaveConfig()
+        end
     end
     
     sliderHandle.MouseButton1Down:Connect(function()
@@ -1080,7 +1061,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         end
     end)
     
-    -- Add hover effect for slider frame
+    -- Hover effect
     sliderFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             createTween(sliderFrame, {BackgroundColor3 = COLORS.HOVER})
@@ -1092,6 +1073,9 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
             createTween(sliderFrame, {BackgroundColor3 = COLORS.SECONDARY})
         end
     end)
+    
+    local elementID = (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Slider"
+    sliderFrame:SetAttribute("ElementID", elementID)
     
     updateSlider(currentValue)
     
@@ -1620,6 +1604,16 @@ function GuiLibrary:CreateSettingsTab(window)
             ANIM_TIME = 0.01
         end
     end)
+
+    self:CreateToggle(settingsTab, "Auto Save Config", false, function(state)
+        autoSaveEnabled = state
+        if state then
+            GuiLibrary.SaveConfig()   -- new
+            GuiLibrary:CreateNotification("Auto Save", "Enabled - Settings will now save automatically", 3, "success")
+        else
+            GuiLibrary:CreateNotification("Auto Save", "Disabled", 2, "info")
+        end
+    end)
     
     self:CreateSection(settingsTab, "Performance                                                        |   Library by Soldo_io")
     
@@ -1658,16 +1652,6 @@ function GuiLibrary:CreateSettingsTab(window)
             window.FPSLabel.Visible = false
         end
     end)
-
-    self:CreateToggle(settingsTab, "Auto Save Config", false, function(state)
-        autoSaveEnabled = state
-        if state then
-            saveAutoConfig(window)  -- save immediately when enabled
-            GuiLibrary:CreateNotification("Auto Save", "Enabled - Will save on changes", 2, "success")
-        else
-            GuiLibrary:CreateNotification("Auto Save", "Disabled", 2, "info")
-        end
-    end)
     
     self:CreateButton(settingsTab, "Reset Settings", function()
         self:CreateNotification("Settings", "Settings have been reset to default!", 2, "info")
@@ -1681,10 +1665,6 @@ function GuiLibrary:CreateSettingsTab(window)
         ANIM_TIME = 0.3
         
         updateElementColors(window)
-    end)
-
-    self:CreateButton(settingsTab, "Manual Save Now", function()
-        saveAutoConfig(window)
     end)
     
     return settingsTab
