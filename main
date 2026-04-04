@@ -1,11 +1,10 @@
--- Advanced Roblox Luau GUI Library for Executors
--- Made by Soldo / Discord: Soldo_io
--- Created with modern animations and comprehensive components
+-- Made by Soldo / Discord: cyber_modz
 
 local GuiLibrary = {}
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 -- Animation settings
 local ANIM_TIME = 0.3
@@ -28,72 +27,38 @@ local COLORS = {
 
 -- Theme configurations
 local themes = {
-    Dark = {
-        PRIMARY = Color3.fromRGB(45, 45, 55),
-        SECONDARY = Color3.fromRGB(35, 35, 45),
-        ACCENT = Color3.fromRGB(100, 100, 255),
-        SUCCESS = Color3.fromRGB(75, 181, 67),
-        WARNING = Color3.fromRGB(255, 193, 7),
-        DANGER = Color3.fromRGB(220, 53, 69),
-        TEXT = Color3.fromRGB(220, 220, 220),
-        TEXT_MUTED = Color3.fromRGB(160, 160, 160),
-        BORDER = Color3.fromRGB(60, 60, 70),
-        HOVER = Color3.fromRGB(55, 55, 65)
-    },
-    Light = {
-        PRIMARY = Color3.fromRGB(230, 230, 240),
-        SECONDARY = Color3.fromRGB(245, 245, 250),
-        ACCENT = Color3.fromRGB(50, 100, 200),
-        SUCCESS = Color3.fromRGB(50, 150, 50),
-        WARNING = Color3.fromRGB(200, 150, 0),
-        DANGER = Color3.fromRGB(200, 50, 50),
-        TEXT = Color3.fromRGB(40, 40, 50),
-        TEXT_MUTED = Color3.fromRGB(100, 100, 120),
-        BORDER = Color3.fromRGB(200, 200, 210),
-        HOVER = Color3.fromRGB(220, 220, 230)
-    },
-    Midnight = {
-        PRIMARY = Color3.fromRGB(20, 20, 30),
-        SECONDARY = Color3.fromRGB(15, 15, 25),
-        ACCENT = Color3.fromRGB(80, 80, 150),
-        SUCCESS = Color3.fromRGB(60, 150, 60),
-        WARNING = Color3.fromRGB(200, 150, 0),
-        DANGER = Color3.fromRGB(180, 40, 40),
-        TEXT = Color3.fromRGB(200, 200, 210),
-        TEXT_MUTED = Color3.fromRGB(140, 140, 160),
-        BORDER = Color3.fromRGB(40, 40, 50),
-        HOVER = Color3.fromRGB(30, 30, 40)
-    },
-    Forest = {
-        PRIMARY = Color3.fromRGB(30, 40, 30),
-        SECONDARY = Color3.fromRGB(25, 35, 25),
-        ACCENT = Color3.fromRGB(50, 120, 50),
-        SUCCESS = Color3.fromRGB(60, 150, 60),
-        WARNING = Color3.fromRGB(150, 120, 0),
-        DANGER = Color3.fromRGB(150, 50, 50),
-        TEXT = Color3.fromRGB(220, 230, 220),
-        TEXT_MUTED = Color3.fromRGB(160, 180, 160),
-        BORDER = Color3.fromRGB(40, 50, 40),
-        HOVER = Color3.fromRGB(35, 45, 35)
-    },
-    Ocean = {
-        PRIMARY = Color3.fromRGB(30, 40, 50),
-        SECONDARY = Color3.fromRGB(25, 35, 45),
-        ACCENT = Color3.fromRGB(0, 100, 150),
-        SUCCESS = Color3.fromRGB(50, 150, 100),
-        WARNING = Color3.fromRGB(150, 120, 0),
-        DANGER = Color3.fromRGB(150, 50, 50),
-        TEXT = Color3.fromRGB(220, 230, 240),
-        TEXT_MUTED = Color3.fromRGB(160, 180, 200),
-        BORDER = Color3.fromRGB(40, 50, 60),
-        HOVER = Color3.fromRGB(35, 45, 55)
-    }
+    Dark = { PRIMARY = Color3.fromRGB(45, 45, 55), SECONDARY = Color3.fromRGB(35, 35, 45), ACCENT = Color3.fromRGB(100, 100, 255), SUCCESS = Color3.fromRGB(75, 181, 67), WARNING = Color3.fromRGB(255, 193, 7), DANGER = Color3.fromRGB(220, 53, 69), TEXT = Color3.fromRGB(220, 220, 220), TEXT_MUTED = Color3.fromRGB(160, 160, 160), BORDER = Color3.fromRGB(60, 60, 70), HOVER = Color3.fromRGB(55, 55, 65) },
+    Light = { PRIMARY = Color3.fromRGB(230, 230, 240), SECONDARY = Color3.fromRGB(245, 245, 250), ACCENT = Color3.fromRGB(50, 100, 200), SUCCESS = Color3.fromRGB(50, 150, 50), WARNING = Color3.fromRGB(200, 150, 0), DANGER = Color3.fromRGB(200, 50, 50), TEXT = Color3.fromRGB(40, 40, 50), TEXT_MUTED = Color3.fromRGB(100, 100, 120), BORDER = Color3.fromRGB(200, 200, 210), HOVER = Color3.fromRGB(220, 220, 230) },
+    Midnight = { PRIMARY = Color3.fromRGB(20, 20, 30), SECONDARY = Color3.fromRGB(15, 15, 25), ACCENT = Color3.fromRGB(80, 80, 150), SUCCESS = Color3.fromRGB(60, 150, 60), WARNING = Color3.fromRGB(200, 150, 0), DANGER = Color3.fromRGB(180, 40, 40), TEXT = Color3.fromRGB(200, 200, 210), TEXT_MUTED = Color3.fromRGB(140, 140, 160), BORDER = Color3.fromRGB(40, 40, 50), HOVER = Color3.fromRGB(30, 30, 40) },
+    Forest = { PRIMARY = Color3.fromRGB(30, 40, 30), SECONDARY = Color3.fromRGB(25, 35, 25), ACCENT = Color3.fromRGB(50, 120, 50), SUCCESS = Color3.fromRGB(60, 150, 60), WARNING = Color3.fromRGB(150, 120, 0), DANGER = Color3.fromRGB(150, 50, 50), TEXT = Color3.fromRGB(220, 230, 220), TEXT_MUTED = Color3.fromRGB(160, 180, 160), BORDER = Color3.fromRGB(40, 50, 40), HOVER = Color3.fromRGB(35, 45, 35) },
+    Ocean = { PRIMARY = Color3.fromRGB(30, 40, 50), SECONDARY = Color3.fromRGB(25, 35, 45), ACCENT = Color3.fromRGB(0, 100, 150), SUCCESS = Color3.fromRGB(50, 150, 100), WARNING = Color3.fromRGB(150, 120, 0), DANGER = Color3.fromRGB(150, 50, 50), TEXT = Color3.fromRGB(220, 230, 240), TEXT_MUTED = Color3.fromRGB(160, 180, 200), BORDER = Color3.fromRGB(40, 50, 60), HOVER = Color3.fromRGB(35, 45, 55) }
 }
 
--- Utility functions
+-- Auto Save System (per-game using PlaceId)
+local AUTO_SAVE_FOLDER = "GuiLibrary_AutoSaves"
+local autoSaveEnabled = true
+local currentPlaceId = tostring(game.PlaceId)
+local elementSetters = {}
+local restorationQueue = {} -- Queue to restore element values when they're created
+local isInitializing = false -- Prevent saves during initial setup
+local activeInputConnections = {} -- for cleanup on close
 
-print("Gui Library Created by Discord: Soldo_io / https://github.com/SoldoxD/libery/tree/main")
+local function ensureAutoSaveFolder()
+    pcall(function()
+        if not isfolder(AUTO_SAVE_FOLDER) then
+            makefolder(AUTO_SAVE_FOLDER)
+        end
+    end)
+end
+
+local function getAutoSavePath()
+    return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId .. ".json"
+end
+
 local function createTween(object, properties, time)
+    if not object or not object.Parent then
+        return nil
+    end
     time = time or ANIM_TIME
     local tweenInfo = TweenInfo.new(time, EASING_STYLE, EASING_DIRECTION)
     local tween = TweenService:Create(object, tweenInfo, properties)
@@ -116,54 +81,27 @@ local function createStroke(parent, thickness, color)
     return stroke
 end
 
-local function createGradient(parent, colors, rotation)
-    local gradient = Instance.new("UIGradient")
-    if colors then
-        gradient.Color = ColorSequence.new(colors)
-    end
-    if rotation then
-        gradient.Rotation = rotation
-    end
-    gradient.Parent = parent
-    return gradient
-end
-
--- Helper function to update colors of all elements
 local function updateElementColors(window)
-    -- Update main frame
     if window.MainFrame then
         createTween(window.MainFrame, {BackgroundColor3 = COLORS.PRIMARY})
         local uiStroke = window.MainFrame:FindFirstChild("UIStroke")
-        if uiStroke then
-            createTween(uiStroke, {Color = COLORS.BORDER})
-        end
+        if uiStroke then createTween(uiStroke, {Color = COLORS.BORDER}) end
     end
 
-    -- Update title bar
     local titleBar = window.MainFrame and window.MainFrame:FindFirstChild("TitleBar")
     if titleBar then
         createTween(titleBar, {BackgroundColor3 = COLORS.SECONDARY})
         local titleLabel = titleBar:FindFirstChild("TitleLabel")
-        if titleLabel then
-            createTween(titleLabel, {TextColor3 = COLORS.TEXT})
-        end
+        if titleLabel then createTween(titleLabel, {TextColor3 = COLORS.TEXT}) end
         local fpsLabel = titleBar:FindFirstChild("FPSLabel")
-        if fpsLabel then
-            createTween(fpsLabel, {BackgroundColor3 = COLORS.PRIMARY})
-        end
+        if fpsLabel then createTween(fpsLabel, {BackgroundColor3 = COLORS.PRIMARY}) end
         local settingsButton = titleBar:FindFirstChild("SettingsButton")
-        if settingsButton then
-            createTween(settingsButton, {TextColor3 = COLORS.TEXT})
-        end
+        if settingsButton then createTween(settingsButton, {TextColor3 = COLORS.TEXT}) end
         local closeButton = titleBar:FindFirstChild("CloseButton")
-        if closeButton then
-            createTween(closeButton, {TextColor3 = COLORS.DANGER})
-        end
+        if closeButton then createTween(closeButton, {TextColor3 = COLORS.DANGER}) end
     end
 
-    -- Update all tabs and their elements
     for tabName, tab in pairs(window.Tabs or {}) do
-        -- Update tab button
         if tab.Button then
             if window.CurrentTab == tabName then
                 createTween(tab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
@@ -171,133 +109,59 @@ local function updateElementColors(window)
                 createTween(tab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
             end
         end
-
-        -- Update tab content
-        if tab.Content then
-            createTween(tab.Content, {ScrollBarImageColor3 = COLORS.ACCENT})
-        end
-
-        -- Update all elements within the tab
+        if tab.Content then createTween(tab.Content, {ScrollBarImageColor3 = COLORS.ACCENT}) end
         for _, element in ipairs(tab.Elements or {}) do
             if element and element:IsA("GuiObject") then
-                -- Handle different types of elements
                 if element.Name:match("Button") and not element.Name:match("Tab") then
                     createTween(element, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
                 elseif element.Name:match("Toggle") then
                     createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local toggleButton = element:FindFirstChild("TextButton")
-                    if toggleButton then
-                        local toggleIndicator = toggleButton:FindFirstChild("Frame")
-                        if toggleIndicator then
-                            local isToggled = toggleIndicator.Position == UDim2.new(1, -18, 0.5, -8)
-                            createTween(toggleButton, {BackgroundColor3 = isToggled and COLORS.SUCCESS or COLORS.BORDER})
-                            createTween(toggleIndicator, {BackgroundColor3 = COLORS.TEXT})
+                    local tb = element:FindFirstChild("TextButton")
+                    if tb then
+                        local ind = tb:FindFirstChild("Frame")
+                        if ind then
+                            local isOn = element:GetAttribute("ToggleState") == 1
+                            createTween(tb, {BackgroundColor3 = isOn and COLORS.SUCCESS or COLORS.BORDER})
+                            createTween(ind, {BackgroundColor3 = COLORS.TEXT})
                         end
                     end
-                    local toggleLabel = element:FindFirstChildWhichIsA("TextLabel")
-                    if toggleLabel then
-                        createTween(toggleLabel, {TextColor3 = COLORS.TEXT})
-                    end
+                    local lbl = element:FindFirstChildWhichIsA("TextLabel")
+                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
                 elseif element.Name:match("Slider") then
                     createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local sliderTrack = element:FindFirstChild("Frame")
-                    if sliderTrack then
-                        createTween(sliderTrack, {BackgroundColor3 = COLORS.BORDER})
-                        local sliderFill = sliderTrack:FindFirstChild("Frame")
-                        if sliderFill then
-                            createTween(sliderFill, {BackgroundColor3 = COLORS.ACCENT})
-                        end
-                        local sliderHandle = sliderTrack:FindFirstChild("TextButton")
-                        if sliderHandle then
-                            createTween(sliderHandle, {BackgroundColor3 = COLORS.TEXT})
-                        end
+                    local track = element:FindFirstChild("Frame")
+                    if track then
+                        createTween(track, {BackgroundColor3 = COLORS.BORDER})
+                        local fill = track:FindFirstChild("Frame")
+                        if fill then createTween(fill, {BackgroundColor3 = COLORS.ACCENT}) end
+                        local handle = track:FindFirstChild("TextButton")
+                        if handle then createTween(handle, {BackgroundColor3 = COLORS.TEXT}) end
                     end
-                    local sliderLabel = element:FindFirstChild("SliderLabel")
-                    if sliderLabel then
-                        createTween(sliderLabel, {TextColor3 = COLORS.TEXT})
-                    end
-                    local valueLabel = element:FindFirstChild("TextLabel", true)
-                    if valueLabel and valueLabel.Name ~= "SliderLabel" then
-                        createTween(valueLabel, {TextColor3 = COLORS.ACCENT})
-                    end
-                elseif element.Name:match("Dropdown") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local dropdownButton = element:FindFirstChild("TextButton")
-                    if dropdownButton then
-                        createTween(dropdownButton, {BackgroundColor3 = COLORS.PRIMARY, TextColor3 = COLORS.TEXT})
-                        local dropdownArrow = dropdownButton:FindFirstChild("TextLabel")
-                        if dropdownArrow then
-                            createTween(dropdownArrow, {TextColor3 = COLORS.TEXT_MUTED})
-                        end
-                    end
-                    local dropdownList = element:FindFirstChild("DropdownList")
-                    if dropdownList then
-                        createTween(dropdownList, {BackgroundColor3 = COLORS.PRIMARY, ScrollBarImageColor3 = COLORS.ACCENT})
-                        local uiStroke = dropdownList:FindFirstChild("UIStroke")
-                        if uiStroke then
-                            createTween(uiStroke, {Color = COLORS.BORDER})
-                        end
-                        for _, optionButton in ipairs(dropdownList:GetChildren()) do
-                            if optionButton:IsA("TextButton") then
-                                createTween(optionButton, {TextColor3 = COLORS.TEXT, BackgroundTransparency = 1})
-                            end
-                        end
-                    end
-                elseif element.Name:match("Label") then
-                    createTween(element, {TextColor3 = COLORS.TEXT})
+                    local lbl = element:FindFirstChild("SliderLabel")
+                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
+                    local val = element:FindFirstChild("TextLabel", true)
+                    if val and val.Name ~= "SliderLabel" then createTween(val, {TextColor3 = COLORS.ACCENT}) end
                 elseif element.Name:match("Section") then
                     createTween(element, {BackgroundColor3 = COLORS.BORDER})
-                    local sectionLabel = element:FindFirstChildWhichIsA("TextLabel")
-                    if sectionLabel then
-                        createTween(sectionLabel, {TextColor3 = COLORS.TEXT})
-                    end
-                elseif element.Name:match("Input") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local textBox = element:FindFirstChild("TextBox")
-                    if textBox then
-                        createTween(textBox, {BackgroundColor3 = COLORS.PRIMARY, TextColor3 = COLORS.TEXT, PlaceholderColor3 = COLORS.TEXT_MUTED})
-                    end
-                elseif element.Name:match("Keybind") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local keybindButton = element:FindFirstChild("TextButton")
-                    if keybindButton then
-                        createTween(keybindButton, {BackgroundColor3 = COLORS.PRIMARY, TextColor3 = COLORS.TEXT})
-                    end
-                    local keybindLabel = element:FindFirstChildWhichIsA("TextLabel")
-                    if keybindLabel then
-                        createTween(keybindLabel, {TextColor3 = COLORS.TEXT})
-                    end
-                elseif element.Name:match("ColorPicker") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
-                    local colorDisplay = element:FindFirstChild("TextButton")
-                    if colorDisplay then
-                        local uiStroke = colorDisplay:FindFirstChild("UIStroke")
-                        if uiStroke then
-                            createTween(uiStroke, {Color = COLORS.BORDER})
-                        end
-                    end
-                    local colorLabel = element:FindFirstChildWhichIsA("TextLabel")
-                    if colorLabel then
-                        createTween(colorLabel, {TextColor3 = COLORS.TEXT})
-                    end
+                    local lbl = element:FindFirstChildWhichIsA("TextLabel")
+                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
                 end
             end
         end
     end
 end
 
--- Loader Animation
 local function createLoader(parent, size)
     local loaderFrame = Instance.new("Frame")
     loaderFrame.Size = UDim2.new(0, size, 0, size)
     loaderFrame.Position = UDim2.new(0.5, -size/2, 0.5, -size/2)
     loaderFrame.BackgroundTransparency = 1
     loaderFrame.Parent = parent
-    
+
     local dots = {}
     local numDots = 8
     local radius = size * 0.3
-    
+
     for i = 1, numDots do
         local dot = Instance.new("Frame")
         dot.Size = UDim2.new(0, 10, 0, 10)
@@ -305,402 +169,375 @@ local function createLoader(parent, size)
         dot.BorderSizePixel = 0
         dot.Parent = loaderFrame
         createCorner(dot, 5)
-        
         local angle = (i - 1) * (2 * math.pi / numDots)
-        dot.Position = UDim2.new(
-            0.5, math.cos(angle) * radius,
-            0.5, math.sin(angle) * radius
-        )
-        
+        dot.Position = UDim2.new(0.5, math.cos(angle) * radius, 0.5, math.sin(angle) * radius)
         table.insert(dots, dot)
     end
-    
-    -- Animate dots
-    spawn(function()
+
+    task.spawn(function()
         while loaderFrame.Parent do
-            for i, dot in ipairs(dots) do
-                createTween(dot, {
-                    Size = UDim2.new(0, 14, 0, 14),
-                    BackgroundTransparency = 0
-                }, 0.3)
-                wait(0.1)
-                createTween(dot, {
-                    Size = UDim2.new(0, 10, 0, 10),
-                    BackgroundTransparency = 0.5
-                }, 0.3)
+            for _, dot in ipairs(dots) do
+                createTween(dot, {Size = UDim2.new(0, 14, 0, 14), BackgroundTransparency = 0}, 0.3)
+                task.wait(0.1)
+                createTween(dot, {Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 0.5}, 0.3)
             end
-            wait(0.2)
+            task.wait(0.2)
         end
     end)
-    
+
     return loaderFrame
 end
 
--- Main GUI Creation
-function GuiLibrary:CreateWindow(title, size)
-    title = title or "GUI Library"
-    size = size or UDim2.new(0, 600, 0, 400)
+local function saveConfig(window, force)
+    if not force and not autoSaveEnabled then
+        return
+    end
     
-    -- Create ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "GuiLibraryUI"
-    screenGui.ResetOnSpawn = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent = game.CoreGui
-    
-    -- Create loader
-    local loader = createLoader(screenGui, 100)
-    
-    -- Main Frame
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 0, 0, 0)
-    mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    mainFrame.BackgroundColor3 = COLORS.PRIMARY
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Active = true
-    mainFrame.Draggable = true
-    mainFrame.Visible = false
-    mainFrame.Parent = screenGui
-    
-    createCorner(mainFrame, 12)
-    createStroke(mainFrame, 2, COLORS.BORDER)
-    
-    -- Title Bar
-    local titleBar = Instance.new("Frame")
-    titleBar.Name = "TitleBar"
-    titleBar.Size = UDim2.new(1, 0, 0, 40)
-    titleBar.BackgroundColor3 = COLORS.SECONDARY
-    titleBar.BorderSizePixel = 0
-    titleBar.Parent = mainFrame
-    
-    createCorner(titleBar, 12)
-    
-    -- Title Label
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -140, 1, 0)
-    titleLabel.Position = UDim2.new(0, 10, 0, 0)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = title
-    titleLabel.TextColor3 = COLORS.TEXT
-    titleLabel.TextSize = 16
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Parent = titleBar
-    
-    -- FPS Label
-    local fpsLabel = Instance.new("TextLabel")
-    fpsLabel.Name = "FPSLabel"
-    fpsLabel.Size = UDim2.new(0, 60, 0, 30)
-    fpsLabel.Position = UDim2.new(1, -130, 0, 5)
-    fpsLabel.BackgroundColor3 = COLORS.PRIMARY
-    fpsLabel.TextColor3 = COLORS.SUCCESS
-    fpsLabel.TextSize = 12
-    fpsLabel.Font = Enum.Font.GothamBold
-    fpsLabel.Text = "FPS: 60"
-    fpsLabel.Visible = false
-    fpsLabel.Parent = titleBar
-    
-    createCorner(fpsLabel, 4)
-    
-    -- Settings Button
-    local settingsButton = Instance.new("TextButton")
-    settingsButton.Name = "SettingsButton"
-    settingsButton.Size = UDim2.new(0, 30, 0, 30)
-    settingsButton.Position = UDim2.new(1, -70, 0, 5)
-    settingsButton.BackgroundTransparency = 1
-    settingsButton.Text = "⚙️"
-    settingsButton.TextColor3 = COLORS.TEXT
-    settingsButton.TextSize = 14
-    settingsButton.Font = Enum.Font.GothamBold
-    settingsButton.BorderSizePixel = 0
-    settingsButton.Parent = titleBar
-    
-    createCorner(settingsButton, 6)
-    
-    -- Close Button
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.Size = UDim2.new(0, 30, 0, 30)
-    closeButton.Position = UDim2.new(1, -35, 0, 5)
-    closeButton.BackgroundTransparency = 1
-    closeButton.Text = "❌"
-    closeButton.TextColor3 = COLORS.DANGER
-    closeButton.TextSize = 14
-    closeButton.Font = Enum.Font.GothamBold
-    closeButton.BorderSizePixel = 0
-    closeButton.Parent = titleBar
-    
-    createCorner(closeButton, 6)
-    
-    -- Content Frame
-    local contentFrame = Instance.new("Frame")
-    contentFrame.Name = "ContentFrame"
-    contentFrame.Size = UDim2.new(1, -20, 1, -60)
-    contentFrame.Position = UDim2.new(0, 10, 0, 50)
-    contentFrame.BackgroundTransparency = 1
-    contentFrame.Parent = mainFrame
-    
-    -- Tabs Container
-    local tabsContainer = Instance.new("Frame")
-    tabsContainer.Name = "TabsContainer"
-    tabsContainer.Size = UDim2.new(1, 0, 0, 35)
-    tabsContainer.BackgroundTransparency = 1
-    tabsContainer.Parent = contentFrame
-    
-    local tabsLayout = Instance.new("UIListLayout")
-    tabsLayout.FillDirection = Enum.FillDirection.Horizontal
-    tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabsLayout.Padding = UDim.new(0, 5)
-    tabsLayout.Parent = tabsContainer
-    
-    -- Tab Content Container
-    local tabContentContainer = Instance.new("Frame")
-    tabContentContainer.Name = "TabContentContainer"
-    tabContentContainer.Size = UDim2.new(1, 0, 1, -45)
-    tabContentContainer.Position = UDim2.new(0, 0, 0, 45)
-    tabContentContainer.BackgroundTransparency = 1
-    tabContentContainer.Parent = contentFrame
-    
-    -- Window object
-    local window = {
-        ScreenGui = screenGui,
-        MainFrame = mainFrame,
-        ContentFrame = contentFrame,
-        TabsContainer = tabsContainer,
-        TabContentContainer = tabContentContainer,
-        Tabs = {},
-        CurrentTab = nil,
-        CurrentSize = size,
-        FPSLabel = fpsLabel
+    -- Don't save during initialization to prevent overwriting loaded config
+    if isInitializing then
+        return
+    end
+
+    window = window or GuiLibrary.CurrentWindow
+    if not window or not window.CurrentSize then
+        return
+    end
+
+    -- Ensure folder exists
+    local ok, err = pcall(function()
+        if not isfolder(AUTO_SAVE_FOLDER) then
+            makefolder(AUTO_SAVE_FOLDER)
+        end
+    end)
+    if not ok then
+        print("ERROR: Failed to create folder:", err)
+        return
+    end
+
+    local config = {
+        UIScale = window.CurrentSize.X.Offset / 600,
+        AnimationsEnabled = (ANIM_TIME > 0.05),
+        AutoSaveEnabled = autoSaveEnabled,
+        Theme = nil,
+        Components = {}
     }
-    
-    -- Window hiding/showing functionality
-    local isVisible = true
-    
-    local function hideWindow()
-        if not isVisible then return end
-        isVisible = false
-        
-        window.CurrentSize = mainFrame.Size
-        
-        createTween(mainFrame, {
-            Size = UDim2.new(0, window.CurrentSize.X.Offset * 0.8, 0, window.CurrentSize.Y.Offset * 0.8),
-            BackgroundTransparency = 0.7
-        }, ANIM_TIME * 0.5)
-        wait(ANIM_TIME * 0.5)
-        
-        createTween(mainFrame, {
-            Size = UDim2.new(0, 0, 0, 0),
-            Position = UDim2.new(0.5, 0, 0.5, 0),
-            BackgroundTransparency = 1,
-            Rotation = 45
-        }, ANIM_TIME * 0.5)
-        
-        wait(ANIM_TIME * 0.5)
-        mainFrame.Visible = false
+
+    -- persist theme name if exactly matched
+    for name, theme in pairs(themes) do
+        local themeMatches = true
+        for k, v in pairs(theme) do
+            if not COLORS[k] or COLORS[k] ~= v then
+                themeMatches = false
+                break
+            end
+        end
+        if themeMatches then
+            config.Theme = name
+            break
+        end
     end
-    
-    local function showWindow()
-        if isVisible then return end
-        isVisible = true
-        
-        mainFrame.Visible = true
-        mainFrame.Size = UDim2.new(0, 0, 0, 0)
-        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        mainFrame.BackgroundTransparency = 1
-        mainFrame.Rotation = -45
-        
-        createTween(mainFrame, {
-            Size = UDim2.new(0, window.CurrentSize.X.Offset * 0.8, 0, window.CurrentSize.Y.Offset * 0.8),
-            BackgroundTransparency = 0.3,
-            Rotation = 0
-        }, ANIM_TIME * 0.5)
-        wait(ANIM_TIME * 0.5)
-        
-        createTween(mainFrame, {
-            Size = window.CurrentSize,
-            Position = UDim2.new(0.5, -window.CurrentSize.X.Offset/2, 0.5, -window.CurrentSize.Y.Offset/2),
-            BackgroundTransparency = 0
-        }, ANIM_TIME * 0.5)
-    end
-    
-    -- Settings button functionality
-    settingsButton.MouseButton1Click:Connect(function()
-        if window.Tabs["Settings"] then
-            local settingsTab = window.Tabs["Settings"]
-            if window.CurrentTab ~= "Settings" then
-                local function switchToSettings()
-                    if window.CurrentTab and window.Tabs[window.CurrentTab] then
-                        local currentTab = window.Tabs[window.CurrentTab]
-                        createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
-                        currentTab.Content.Visible = false
-                    end
-                    window.CurrentTab = "Settings"
-                    createTween(settingsTab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
-                    settingsTab.Content.Visible = true
+
+    for _, tab in pairs(window.Tabs or {}) do
+        for _, element in ipairs(tab.Elements or {}) do
+            local id = element:GetAttribute("ElementID")
+            if not id then
+                -- Generate ID the same way as CreateToggle/CreateSlider
+                local elementName = element.Name or ""
+                local baseName = ""
+                if element:GetAttribute("WidgetType") == "Toggle" or elementName:match("Toggle$") then
+                    baseName = elementName:gsub("Toggle$", ""):gsub("%s+", "_") .. "_Toggle"
+                elseif element:GetAttribute("WidgetType") == "Slider" or elementName:match("Slider$") then
+                    baseName = elementName:gsub("Slider$", ""):gsub("%s+", "_") .. "_Slider"
+                else
+                    baseName = elementName:gsub("%s+", "_")
                 end
-                switchToSettings()
+                id = (tab.Name or "Tab") .. "_" .. baseName
+                element:SetAttribute("ElementID", id)
+            end
+
+            local data = {Type = nil, Value = nil}
+            local widgetType = element:GetAttribute("WidgetType")
+            local elementName = element.Name or ""
+
+            if widgetType == "Toggle" or (widgetType == nil and elementName:match("Toggle$")) then
+                local isOn = element:GetAttribute("ToggleState") == 1
+                if isOn ~= nil then
+                    data.Type = "Toggle"
+                    data.Value = isOn
+                end
+            elseif widgetType == "Slider" or (widgetType == nil and elementName:match("Slider$")) then
+                local value = element:GetAttribute("SliderValue")
+                if value ~= nil then
+                    data.Type = "Slider"
+                    data.Value = value
+                else
+                    local valLabel
+                    for _, child in ipairs(element:GetChildren()) do
+                        if child:IsA("TextLabel") and child.Name ~= "SliderLabel" then
+                            valLabel = child
+                            break
+                        end
+                    end
+                    data.Type = "Slider"
+                    data.Value = tonumber(valLabel and valLabel.Text) or 0
+                end
+            elseif widgetType == "Dropdown" or (widgetType == nil and elementName:match("Dropdown$")) then
+                local value = element:GetAttribute("DropdownValue")
+                if value then
+                    data.Type = "Dropdown"
+                    data.Value = value
+                else
+                    local button = element:FindFirstChildWhichIsA("TextButton")
+                    if button then
+                        local textVal = button.Text:match(": %s*(.*)$")
+                        if textVal then
+                            data.Type = "Dropdown"
+                            data.Value = textVal
+                        end
+                    end
+                end
+            elseif widgetType == "ColorPicker" or (widgetType == nil and elementName:match("ColorPicker$")) then
+                local value = element:GetAttribute("ColorValue")
+                if value then
+                    data.Type = "ColorPicker"
+                    if typeof(value) == "Color3" then
+                        data.Value = {R = value.R, G = value.G, B = value.B}
+                    elseif type(value) == "table" then
+                        data.Value = value
+                    end
+                end
+            elseif widgetType == "Input" or (widgetType == nil and elementName:match("Input$")) then
+                local value = element:GetAttribute("InputValue")
+                if value then
+                    data.Type = "Input"
+                    data.Value = value
+                end
+            elseif widgetType == "Keybind" or (widgetType == nil and elementName:match("Keybind$")) then
+                local value = element:GetAttribute("KeybindValue")
+                if value and value ~= "None" then
+                    data.Type = "Keybind"
+                    data.Value = value
+                end
+            end
+            if data.Type then
+                table.insert(config.Components, {ID = id, Data = data})
             end
         end
+    end
+
+    local jsonStr = HttpService:JSONEncode(config)
+    local path = getAutoSavePath()
+    local writeOk, writeErr = pcall(function()
+        writefile(path, jsonStr)
     end)
     
-    -- Hover effects for settings button
-    settingsButton.MouseEnter:Connect(function()
-        createTween(settingsButton, {TextColor3 = COLORS.HOVER})
+    if writeOk then
+        print("[GuiLibrary] Config saved to: " .. path)
+    else
+        print("[GuiLibrary] ERROR saving config:", writeErr)
+    end
+end
+GuiLibrary.SaveConfig = saveConfig
+
+local function loadConfig(window)
+    -- Don't check MainFrame here - it's not needed for file operations
+    if not window then
+        print("[GuiLibrary] Cannot load config: window is nil")
+        return false
+    end
+
+    local path = getAutoSavePath()
+    print("[GuiLibrary] Attempting to load config from: " .. path)
+    
+    local fileExists = false
+    local checkOk, checkErr = pcall(function()
+        fileExists = isfile(path)
     end)
     
-    settingsButton.MouseLeave:Connect(function()
-        createTween(settingsButton, {TextColor3 = COLORS.TEXT})
+    if not checkOk then
+        print("[GuiLibrary] ERROR checking if file exists:", checkErr)
+        return false
+    end
+    
+    if not fileExists then
+        print("[GuiLibrary] No save file found at: " .. path)
+        return false
+    end
+
+    local readOk, config = pcall(function()
+        return HttpService:JSONDecode(readfile(path))
     end)
     
-    -- Close button functionality
-    closeButton.MouseButton1Click:Connect(function()
-        createTween(mainFrame, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)})
-        wait(ANIM_TIME)
-        screenGui:Destroy()
-    end)
+    if not readOk then
+        print("[GuiLibrary] ERROR reading/decoding config:", config)
+        return false
+    end
     
-    -- Hover effects for close button
-    closeButton.MouseEnter:Connect(function()
-        createTween(closeButton, {TextColor3 = Color3.fromRGB(255, 75, 75)})
-    end)
+    if not config then
+        print("[GuiLibrary] Config is nil after decode")
+        return false
+    end
+
+    print("[GuiLibrary] Successfully loaded config file")
+
+    -- Restore global/window settings first (doesn't require MainFrame)
+    if config.AnimationsEnabled ~= nil then
+        ANIM_TIME = config.AnimationsEnabled and 0.3 or 0.01
+        print("[GuiLibrary] Restored AnimationsEnabled:", config.AnimationsEnabled)
+    end
+
+    if config.AutoSaveEnabled ~= nil then
+        autoSaveEnabled = config.AutoSaveEnabled == true
+        print("[GuiLibrary] Restored AutoSaveEnabled:", autoSaveEnabled)
+    end
+
+    if config.Theme and themes[config.Theme] then
+        for k, v in pairs(themes[config.Theme]) do
+            COLORS[k] = v
+        end
+        print("[GuiLibrary] Restored Theme:", config.Theme)
+    end
+
+    -- Only resize if MainFrame exists
+    if window.MainFrame and config.UIScale then
+        local newSize = UDim2.new(0, 600 * config.UIScale, 0, 400 * config.UIScale)
+        window.CurrentSize = newSize
+        createTween(window.MainFrame, {Size = newSize}, 0.25)
+        print("[GuiLibrary] Restored UIScale:", config.UIScale)
+    else
+        if config.UIScale then
+            window.CurrentSize = UDim2.new(0, 600 * config.UIScale, 0, 400 * config.UIScale)
+            print("[GuiLibrary] Restored UIScale (size only):", config.UIScale)
+        end
+    end
+
+    -- Queue component restoration data to be applied when elements are created
+    restorationQueue = {} -- Clear previous queue
+    for _, entry in ipairs(config.Components or {}) do
+        restorationQueue[entry.ID] = entry.Data
+        print("[GuiLibrary] Queued restoration for: " .. entry.ID .. " (" .. entry.Data.Type .. ")")
+    end
+
+    print("[GuiLibrary] " .. #config.Components .. " component(s) queued for restoration when created")
+
+    -- Apply queued values to any already-created elements (like Settings tab) so they restore immediately
+    for _, tab in pairs(window.Tabs or {}) do
+        for _, el in ipairs(tab.Elements or {}) do
+            local id = el:GetAttribute("ElementID")
+            if id and restorationQueue[id] then
+                local data = restorationQueue[id]
+                local setter = elementSetters[el]
+                if setter and data.Value ~= nil then
+                    setter(data.Value)
+                    print("[GuiLibrary] Applied queued value for existing element:", id, "=", data.Value)
+                end
+                restorationQueue[id] = nil
+            end
+        end
+    end
+
+    -- Apply loaded autoSaveEnabled to the settings toggle (if created)
+    if window.Tabs and window.Tabs.Settings then
+        for _, el in ipairs(window.Tabs.Settings.Elements or {}) do
+            if el.Name == "Auto Save ConfigToggle" then
+                local setFunc = elementSetters[el]
+                if setFunc then
+                    setFunc(autoSaveEnabled)
+                    print("[GuiLibrary] Synced Auto Save Config toggle to:", autoSaveEnabled)
+                end
+                break
+            end
+        end
+    end
+
+    updateElementColors(window)
+    print("[GuiLibrary] Config loaded and applied successfully")
+    return true
+end
+GuiLibrary.LoadConfig = loadConfig
+
+-- Diagnostic function for debugging file I/O
+function GuiLibrary:TestFileSaving()
+    print("[GuiLibrary] ===== FILE I/O DIAGNOSTIC TEST =====")
     
-    closeButton.MouseLeave:Connect(function()
-        createTween(closeButton, {TextColor3 = COLORS.DANGER})
-    end)
+    local testFolder = "GuiLibrary_AutoSaves"
+    local testFile = testFolder .. "/test_" .. tostring(game.PlaceId) .. ".json"
+    local testData = {test = true, timestamp = os.time()}
     
-    -- Show loader first, then transition to main GUI
-    wait(1.5)
-    loader:Destroy()
-    mainFrame.Visible = true
-    
-    createTween(mainFrame, {
-        Size = size,
-        Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2),
-        Rotation = 0
-    })
-    
-    -- Auto-create settings tab
-    self:CreateSettingsTab(window)
-    
-    window.Hide = hideWindow
-    window.Show = showWindow
-    window.Toggle = function()
-        if isVisible then
-            hideWindow()
+    -- Test 1: Folder creation
+    print("[TEST 1] Creating folder: " .. testFolder)
+    local folderOk, folderErr = pcall(function()
+        if not isfolder(testFolder) then
+            makefolder(testFolder)
+            print("✓ Folder created")
         else
-            showWindow()
-        end
-    end
-    
-    updateElementColors(window)
-    
-    return window
-end
-
--- Tab System
-function GuiLibrary:CreateTab(window, name)
-    local tabButton = Instance.new("TextButton")
-    tabButton.Name = name .. "Tab"
-    tabButton.Size = UDim2.new(0, 100, 1, 0)
-    tabButton.BackgroundColor3 = COLORS.SECONDARY
-    tabButton.Text = name
-    tabButton.TextColor3 = COLORS.TEXT_MUTED
-    tabButton.TextSize = 12
-    tabButton.Font = Enum.Font.Gotham
-    tabButton.BorderSizePixel = 0
-    tabButton.Parent = window.TabsContainer
-    
-    createCorner(tabButton, 6)
-    
-    local tabContent = Instance.new("ScrollingFrame")
-    tabContent.Name = name .. "Content"
-    tabContent.Size = UDim2.new(1, 0, 1, 0)
-    tabContent.BackgroundTransparency = 1
-    tabContent.BorderSizePixel = 0
-    tabContent.ScrollBarThickness = 6
-    tabContent.ScrollBarImageColor3 = COLORS.ACCENT
-    tabContent.Visible = false
-    tabContent.Parent = window.TabContentContainer
-    
-    local contentLayout = Instance.new("UIListLayout")
-    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    contentLayout.Padding = UDim.new(0, 8)
-    contentLayout.Parent = tabContent
-    
-    local contentPadding = Instance.new("UIPadding")
-    contentPadding.PaddingTop = UDim.new(0, 10)
-    contentPadding.PaddingLeft = UDim.new(0, 10)
-    contentPadding.PaddingRight = UDim.new(0, 10)
-    contentPadding.PaddingBottom = UDim.new(0, 10)
-    contentPadding.Parent = tabContent
-    
-    local function updateCanvasSize()
-        local totalHeight = contentPadding.PaddingTop.Offset + contentPadding.PaddingBottom.Offset
-        for _, child in ipairs(tabContent:GetChildren()) do
-            if child:IsA("GuiObject") and child ~= contentLayout and child ~= contentPadding then
-                totalHeight = totalHeight + child.Size.Y.Offset + contentLayout.Padding.Offset
-            end
-        end
-        tabContent.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
-    end
-    contentLayout.Changed:Connect(updateCanvasSize)
-    tabContent.ChildAdded:Connect(updateCanvasSize)
-    tabContent.ChildRemoved:Connect(updateCanvasSize)
-    updateCanvasSize()
-    
-    local tab = {
-        Button = tabButton,
-        Content = tabContent,
-        Name = name,
-        Elements = {}
-    }
-    
-    window.Tabs[name] = tab
-    
-    local function switchTab()
-        if window.CurrentTab == name then return end
-        
-        if window.CurrentTab and window.Tabs[window.CurrentTab] then
-            local currentTab = window.Tabs[window.CurrentTab]
-            createTween(currentTab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
-            currentTab.Content.Visible = false
-        end
-        
-        window.CurrentTab = name
-        createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
-        tabContent.Visible = true
-    end
-    
-    tabButton.MouseButton1Click:Connect(switchTab)
-    
-    -- Hover effects with dynamic color reference
-    tabButton.MouseEnter:Connect(function()
-        if window.CurrentTab ~= name then
-            createTween(tabButton, {BackgroundColor3 = COLORS.HOVER})
+            print("✓ Folder already exists")
         end
     end)
-    
-    tabButton.MouseLeave:Connect(function()
-        if window.CurrentTab ~= name then
-            createTween(tabButton, {BackgroundColor3 = COLORS.SECONDARY})
-        end
-    end)
-    
-    if not window.CurrentTab then
-        window.CurrentTab = name
-        createTween(tabButton, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
-        tabContent.Visible = true
+    if not folderOk then
+        print("✗ Folder creation failed:", folderErr)
+        return false
     end
     
-    updateElementColors(window)
+    -- Test 2: File writing
+    print("[TEST 2] Writing test file: " .. testFile)
+    local writeOk, writeErr = pcall(function()
+        writefile(testFile, HttpService:JSONEncode(testData))
+        print("✓ File written successfully")
+    end)
+    if not writeOk then
+        print("✗ File write failed:", writeErr)
+        return false
+    end
     
-    return tab
+    -- Test 3: File checking
+    print("[TEST 3] Checking if file exists: " .. testFile)
+    local checkOk, checkErr = pcall(function()
+        local exists = isfile(testFile)
+        if exists then
+            print("✓ File exists")
+        else
+            print("✗ File does not exist after write!")
+            return false
+        end
+    end)
+    if not checkOk then
+        print("✗ File check failed:", checkErr)
+        return false
+    end
+    
+    -- Test 4: File reading
+    print("[TEST 4] Reading test file: " .. testFile)
+    local readOk, readData = pcall(function()
+        return HttpService:JSONDecode(readfile(testFile))
+    end)
+    if not readOk then
+        print("✗ File read failed:", readData)
+        return false
+    end
+    if readData and readData.test then
+        print("✓ File read successfully and verified")
+    else
+        print("✗ File data is invalid")
+        return false
+    end
+    
+    -- Test 5: File deletion
+    print("[TEST 5] Deleting test file: " .. testFile)
+    local delOk, delErr = pcall(function()
+        delfile(testFile)
+        print("✓ File deleted successfully")
+    end)
+    if not delOk then
+        print("⚠ File deletion failed (may not support delfile):", delErr)
+    end
+    
+    print("[GuiLibrary] ===== ALL TESTS PASSED =====")
+    print("[GuiLibrary] Your executor supports all required file I/O operations!")
+    return true
 end
 
--- Button Component
+-- ==================== COMPONENT FUNCTIONS ====================
 function GuiLibrary:CreateButton(tab, text, callback)
     local button = Instance.new("TextButton")
     button.Name = text .. "Button"
@@ -712,33 +549,27 @@ function GuiLibrary:CreateButton(tab, text, callback)
     button.Font = Enum.Font.Gotham
     button.BorderSizePixel = 0
     button.Parent = tab.Content
-    
     createCorner(button, 6)
-    
     button.MouseButton1Click:Connect(function()
         createTween(button, {Size = UDim2.new(1, -4, 0, 31)})
-        wait(0.1)
+        task.wait(0.1)
         createTween(button, {Size = UDim2.new(1, 0, 0, 35)})
         if callback then callback() end
     end)
-    
     button.MouseEnter:Connect(function()
         createTween(button, {BackgroundColor3 = Color3.fromRGB(
-            math.min(COLORS.ACCENT.R * 255 + 20, 255),
-            math.min(COLORS.ACCENT.G * 255 + 20, 255),
-            math.min(COLORS.ACCENT.B * 255 + 20, 255)
+            math.min(COLORS.ACCENT.R*255+20,255),
+            math.min(COLORS.ACCENT.G*255+20,255),
+            math.min(COLORS.ACCENT.B*255+20,255)
         )})
     end)
-    
     button.MouseLeave:Connect(function()
         createTween(button, {BackgroundColor3 = COLORS.ACCENT})
     end)
-    
     table.insert(tab.Elements, button)
     return button
 end
 
--- Toggle Component
 function GuiLibrary:CreateToggle(tab, text, default, callback)
     local toggleFrame = Instance.new("Frame")
     toggleFrame.Name = text .. "Toggle"
@@ -746,9 +577,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     toggleFrame.BackgroundColor3 = COLORS.SECONDARY
     toggleFrame.BorderSizePixel = 0
     toggleFrame.Parent = tab.Content
-    
     createCorner(toggleFrame, 6)
-    
     local toggleLabel = Instance.new("TextLabel")
     toggleLabel.Size = UDim2.new(1, -50, 1, 0)
     toggleLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -759,7 +588,6 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     toggleLabel.Font = Enum.Font.Gotham
     toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
     toggleLabel.Parent = toggleFrame
-    
     local toggleButton = Instance.new("TextButton")
     toggleButton.Size = UDim2.new(0, 40, 0, 20)
     toggleButton.Position = UDim2.new(1, -45, 0.5, -10)
@@ -767,51 +595,64 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     toggleButton.Text = ""
     toggleButton.BorderSizePixel = 0
     toggleButton.Parent = toggleFrame
-    
     createCorner(toggleButton, 10)
-    
     local toggleIndicator = Instance.new("Frame")
     toggleIndicator.Size = UDim2.new(0, 16, 0, 16)
     toggleIndicator.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
     toggleIndicator.BackgroundColor3 = COLORS.TEXT
     toggleIndicator.BorderSizePixel = 0
     toggleIndicator.Parent = toggleButton
-    
     createCorner(toggleIndicator, 8)
-    
     local isToggled = default or false
-    
-    toggleButton.MouseButton1Click:Connect(function()
-        isToggled = not isToggled
-        
+    local elementID = (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Toggle"
+    toggleFrame:SetAttribute("ElementID", elementID)
+    toggleFrame:SetAttribute("WidgetType", "Toggle")
+    toggleFrame:SetAttribute("ToggleState", isToggled and 1 or 0)
+
+    local function setToggleState(state)
+        isToggled = state
         if isToggled then
-            createTween(toggleButton, {BackgroundColor3 = COLORS.SUCCESS})
-            createTween(toggleIndicator, {Position = UDim2.new(1, -18, 0.5, -8)})
+            toggleButton.BackgroundColor3 = COLORS.SUCCESS
+            toggleIndicator.Position = UDim2.new(1, -18, 0.5, -8)
         else
-            createTween(toggleButton, {BackgroundColor3 = COLORS.BORDER})
-            createTween(toggleIndicator, {Position = UDim2.new(0, 2, 0.5, -8)})
+            toggleButton.BackgroundColor3 = COLORS.BORDER
+            toggleIndicator.Position = UDim2.new(0, 2, 0.5, -8)
         end
-        
+        toggleFrame:SetAttribute("ToggleState", isToggled and 1 or 0)
+    end
+
+    toggleButton.MouseButton1Click:Connect(function()
+        setToggleState(not isToggled)
         if callback then callback(isToggled) end
+        saveConfig(nil, true)
     end)
-    
+
     toggleFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             createTween(toggleFrame, {BackgroundColor3 = COLORS.HOVER})
         end
     end)
-    
+
     toggleFrame.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             createTween(toggleFrame, {BackgroundColor3 = COLORS.SECONDARY})
         end
     end)
-    
+
+    elementSetters[toggleFrame] = setToggleState
+
+    -- Check if there's restoration data for this element
+    if restorationQueue[elementID] and restorationQueue[elementID].Type == "Toggle" then
+        local savedValue = restorationQueue[elementID].Value
+        setToggleState(savedValue)
+        print("[GuiLibrary] Restored Toggle on creation:", elementID, "=", savedValue)
+        restorationQueue[elementID] = nil -- Clear from queue
+    end
+
     table.insert(tab.Elements, toggleFrame)
-    return {Frame = toggleFrame, GetValue = function() return isToggled end}
+    return {Frame = toggleFrame, GetValue = function() return isToggled end, SetValue = setToggleState}
 end
 
--- Slider Component
 function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local sliderFrame = Instance.new("Frame")
     sliderFrame.Name = text .. "Slider"
@@ -819,9 +660,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderFrame.BackgroundColor3 = COLORS.SECONDARY
     sliderFrame.BorderSizePixel = 0
     sliderFrame.Parent = tab.Content
-    
     createCorner(sliderFrame, 6)
-    
     local sliderLabel = Instance.new("TextLabel")
     sliderLabel.Name = "SliderLabel"
     sliderLabel.Size = UDim2.new(0.7, 0, 0, 20)
@@ -833,7 +672,6 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderLabel.Font = Enum.Font.Gotham
     sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     sliderLabel.Parent = sliderFrame
-    
     local valueLabel = Instance.new("TextLabel")
     valueLabel.Size = UDim2.new(0.3, -10, 0, 20)
     valueLabel.Position = UDim2.new(0.7, 0, 0, 5)
@@ -844,24 +682,19 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     valueLabel.Font = Enum.Font.GothamBold
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
     valueLabel.Parent = sliderFrame
-    
     local sliderTrack = Instance.new("Frame")
     sliderTrack.Size = UDim2.new(1, -20, 0, 4)
     sliderTrack.Position = UDim2.new(0, 10, 1, -15)
     sliderTrack.BackgroundColor3 = COLORS.BORDER
     sliderTrack.BorderSizePixel = 0
     sliderTrack.Parent = sliderFrame
-    
     createCorner(sliderTrack, 2)
-    
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new(0, 0, 1, 0)
     sliderFill.BackgroundColor3 = COLORS.ACCENT
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderTrack
-    
     createCorner(sliderFill, 2)
-    
     local sliderHandle = Instance.new("TextButton")
     sliderHandle.Size = UDim2.new(0, 16, 0, 16)
     sliderHandle.Position = UDim2.new(0, -8, 0.5, -8)
@@ -869,88 +702,105 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderHandle.Text = ""
     sliderHandle.BorderSizePixel = 0
     sliderHandle.Parent = sliderTrack
-    
     createCorner(sliderHandle, 8)
-    
+
+    sliderFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Slider")
+    sliderFrame:SetAttribute("WidgetType", "Slider")
+    sliderFrame:SetAttribute("SliderMin", min)
+    sliderFrame:SetAttribute("SliderMax", max)
+
+    local elementID = sliderFrame:GetAttribute("ElementID")
     local currentValue = default or min
     local dragging = false
-    
-    local function updateSlider(value)
+
+    local function updateSlider(value, shouldSave)
+        shouldSave = shouldSave == nil and true or shouldSave
         currentValue = math.clamp(value, min, max)
         local percentage = (currentValue - min) / (max - min)
-        
         createTween(sliderFill, {Size = UDim2.new(percentage, 0, 1, 0)}, 0.1)
         createTween(sliderHandle, {Position = UDim2.new(percentage, -8, 0.5, -8)}, 0.1)
-        
         valueLabel.Text = string.format("%.1f", currentValue)
-        
+        sliderFrame:SetAttribute("SliderValue", currentValue)
         if callback then callback(currentValue) end
+        if shouldSave and not isInitializing then
+            saveConfig(nil, true)
+        end
     end
-    
-    sliderHandle.MouseButton1Down:Connect(function()
-        dragging = true
-        createTween(sliderHandle, {Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new((currentValue - min) / (max - min), -10, 0.5, -10)})
-    end)
-    
+
+    sliderHandle.MouseButton1Down:Connect(function() dragging = true end)
+
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and dragging then
             dragging = false
-            createTween(sliderHandle, {Size = UDim2.new(0, 16, 0, 16), Position = UDim2.new((currentValue - min) / (max - min), -8, 0.5, -8)})
         end
     end)
-    
+
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local mousePos = input.Position.X
             local trackPos = sliderTrack.AbsolutePosition.X
             local trackSize = sliderTrack.AbsoluteSize.X
             local percentage = math.clamp((mousePos - trackPos) / trackSize, 0, 1)
-            local newValue = min + (max - min) * percentage
-            updateSlider(newValue)
+            updateSlider(min + (max - min) * percentage)
         end
     end)
-    
+
     sliderTrack.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             local mousePos = input.Position.X
             local trackPos = sliderTrack.AbsolutePosition.X
             local trackSize = sliderTrack.AbsoluteSize.X
             local percentage = math.clamp((mousePos - trackPos) / trackSize, 0, 1)
-            local newValue = min + (max - min) * percentage
-            updateSlider(newValue)
+            updateSlider(min + (max - min) * percentage)
         end
     end)
-    
-    -- Add hover effect for slider frame
+
     sliderFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             createTween(sliderFrame, {BackgroundColor3 = COLORS.HOVER})
         end
     end)
-    
+
     sliderFrame.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
             createTween(sliderFrame, {BackgroundColor3 = COLORS.SECONDARY})
         end
     end)
+
+    elementSetters[sliderFrame] = updateSlider
     
-    updateSlider(currentValue)
+    -- Check if there's restoration data for this element
+    if restorationQueue[elementID] and restorationQueue[elementID].Type == "Slider" then
+        local savedValue = tonumber(restorationQueue[elementID].Value)
+        if savedValue ~= nil then
+            updateSlider(savedValue, false)
+            print("[GuiLibrary] Restored Slider on creation:", elementID, "=", savedValue)
+            restorationQueue[elementID] = nil -- Clear from queue
+        else
+            updateSlider(currentValue, false)
+        end
+    else
+        updateSlider(currentValue, false)
+    end
     
     table.insert(tab.Elements, sliderFrame)
-    return {Frame = sliderFrame, GetValue = function() return currentValue end, SetValue = updateSlider}
+
+    return {
+        Frame = sliderFrame,
+        GetValue = function() return currentValue end,
+        SetValue = updateSlider
+    }
 end
 
--- Dropdown Component
 function GuiLibrary:CreateDropdown(tab, text, options, callback)
+    -- dropdown code same as previously posted
     local dropdownFrame = Instance.new("Frame")
     dropdownFrame.Name = text .. "Dropdown"
     dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
     dropdownFrame.BackgroundColor3 = COLORS.SECONDARY
     dropdownFrame.BorderSizePixel = 0
     dropdownFrame.Parent = tab.Content
-    
     createCorner(dropdownFrame, 6)
-    
     local dropdownButton = Instance.new("TextButton")
     dropdownButton.Size = UDim2.new(1, -20, 0, 25)
     dropdownButton.Position = UDim2.new(0, 10, 0, 5)
@@ -963,9 +813,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownButton.TextXAlignment = Enum.TextXAlignment.Left
     dropdownButton.ZIndex = 110
     dropdownButton.Parent = dropdownFrame
-    
     createCorner(dropdownButton, 4)
-    
     local dropdownArrow = Instance.new("TextLabel")
     dropdownArrow.Size = UDim2.new(0, 20, 0, 20)
     dropdownArrow.Position = UDim2.new(1, -30, 0, 5)
@@ -976,7 +824,6 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownArrow.Font = Enum.Font.Gotham
     dropdownArrow.ZIndex = 110
     dropdownArrow.Parent = dropdownButton
-    
     local dropdownList = Instance.new("ScrollingFrame")
     dropdownList.Name = "DropdownList"
     dropdownList.Size = UDim2.new(1, -20, 0, 0)
@@ -988,36 +835,31 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownList.ScrollBarThickness = 6
     dropdownList.ScrollBarImageColor3 = COLORS.ACCENT
     dropdownList.Parent = dropdownFrame
-    
     createCorner(dropdownList, 4)
     createStroke(dropdownList, 1, COLORS.BORDER)
-    
     local listLayout = Instance.new("UIListLayout")
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
     listLayout.Parent = dropdownList
-    
     local contentPadding = Instance.new("UIPadding")
     contentPadding.PaddingTop = UDim.new(0, 5)
     contentPadding.PaddingBottom = UDim.new(0, 5)
     contentPadding.Parent = dropdownList
-    
     local currentSelection = options[1] or "None"
     local isOpen = false
     local originalPositions = {}
-    
     local baseY = dropdownFrame.Position.Y.Offset + dropdownFrame.Size.Y.Offset
     for i, element in ipairs(tab.Content:GetChildren()) do
         if element:IsA("GuiObject") and element ~= dropdownFrame and element.Position.Y.Offset >= baseY then
             originalPositions[element] = element.Position
         end
     end
-    
-    for i, option in ipairs(options) do
+
+    for i, opt in ipairs(options) do
         local optionButton = Instance.new("TextButton")
         optionButton.Size = UDim2.new(1, -10, 0, 25)
         optionButton.BackgroundColor3 = Color3.new(0, 0, 0)
         optionButton.BackgroundTransparency = 1
-        optionButton.Text = option
+        optionButton.Text = opt
         optionButton.TextColor3 = COLORS.TEXT
         optionButton.TextSize = 11
         optionButton.Font = Enum.Font.Gotham
@@ -1025,75 +867,89 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
         optionButton.LayoutOrder = i
         optionButton.ZIndex = 101
         optionButton.Parent = dropdownList
-        
         optionButton.MouseButton1Click:Connect(function()
-            currentSelection = option
-            dropdownButton.Text = text .. ": " .. option
-            
+            currentSelection = opt
+            dropdownButton.Text = text .. ": " .. opt
+            dropdownFrame:SetAttribute("DropdownValue", opt)
             isOpen = false
-            createTween(dropdownArrow, {Rotation = 0})
-            createTween(dropdownList, {Size = UDim2.new(1, -20, 0, 0)})
+            createTween(dropdownArrow,{Rotation=0})
+            createTween(dropdownList,{Size=UDim2.new(1,-20,0,0)})
             for element, pos in pairs(originalPositions) do
-                createTween(element, {Position = pos})
+                createTween(element,{Position=pos})
             end
-            wait(ANIM_TIME)
+            task.wait(ANIM_TIME)
             dropdownList.Visible = false
-            dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
-            
-            if callback then callback(option) end
+            dropdownFrame.Size = UDim2.new(1,0,0,35)
+            if callback then callback(opt) end
+            saveConfig(nil, true)
         end)
-        
         optionButton.MouseEnter:Connect(function()
-            createTween(optionButton, {BackgroundTransparency = 0.9, TextColor3 = COLORS.TEXT})
+            createTween(optionButton,{BackgroundTransparency=0.9,TextColor3=COLORS.TEXT})
         end)
-        
         optionButton.MouseLeave:Connect(function()
-            createTween(optionButton, {BackgroundTransparency = 1, TextColor3 = COLORS.TEXT_MUTED})
+            createTween(optionButton,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
         end)
     end
-    
+
     dropdownButton.MouseButton1Click:Connect(function()
         isOpen = not isOpen
-        
         if isOpen then
             local dropdownHeight = math.min(#options * 25, 125)
-            dropdownFrame.Size = UDim2.new(1, 0, 0, 35 + dropdownHeight)
-            dropdownList.Size = UDim2.new(1, -20, 0, 0)
-            dropdownList.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+            dropdownFrame.Size = UDim2.new(1,0,0,35 + dropdownHeight)
+            dropdownList.Size = UDim2.new(1,-20,0,0)
+            dropdownList.CanvasSize = UDim2.new(0,0,0,#options * 25)
             dropdownList.Visible = true
-            createTween(dropdownArrow, {Rotation = 180})
-            createTween(dropdownList, {Size = UDim2.new(1, -20, 0, dropdownHeight)})
-            
+            createTween(dropdownArrow,{Rotation=180})
+            createTween(dropdownList,{Size=UDim2.new(1,-20,0,dropdownHeight)})
             local offset = dropdownHeight
             for element, pos in pairs(originalPositions) do
                 local newY = pos.Y.Offset + offset
-                createTween(element, {Position = UDim2.new(pos.X.Scale, pos.X.Offset, pos.Y.Scale, newY)})
+                createTween(element,{Position=UDim2.new(pos.X.Scale,pos.X.Offset,pos.Y.Scale,newY)})
             end
         else
-            createTween(dropdownArrow, {Rotation = 0})
-            createTween(dropdownList, {Size = UDim2.new(1, -20, 0, 0)})
-            for element, pos in pairs(originalPositions) do
-                createTween(element, {Position = pos})
+            createTween(dropdownArrow,{Rotation=0})
+            createTween(dropdownList,{Size=UDim2.new(1,-20,0,0)})
+            for element,pos in pairs(originalPositions) do
+                createTween(element,{Position=pos})
             end
-            wait(ANIM_TIME)
+            task.wait(ANIM_TIME)
             dropdownList.Visible = false
-            dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
+            dropdownFrame.Size = UDim2.new(1,0,0,35)
         end
     end)
-    
-    dropdownButton.MouseEnter:Connect(function()
-        createTween(dropdownButton, {BackgroundColor3 = COLORS.HOVER})
-    end)
-    
-    dropdownButton.MouseLeave:Connect(function()
-        createTween(dropdownButton, {BackgroundColor3 = COLORS.PRIMARY})
-    end)
-    
+
+    local function setDropdownValue(value)
+        if not value then return end
+        for _, opt in ipairs(options) do
+            if opt == value then
+                currentSelection = opt
+                dropdownButton.Text = text .. ": " .. opt
+                dropdownFrame:SetAttribute("DropdownValue", opt)
+                if callback then callback(opt) end
+                return
+            end
+        end
+    end
+
+    -- Set default selection attribute
+    dropdownFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Dropdown")
+    dropdownFrame:SetAttribute("WidgetType", "Dropdown")
+    dropdownFrame:SetAttribute("DropdownValue", currentSelection)
+
+    elementSetters[dropdownFrame] = setDropdownValue
+
+    -- Check restoration queue for dropdown values
+    if restorationQueue[dropdownFrame:GetAttribute("ElementID")] and restorationQueue[dropdownFrame:GetAttribute("ElementID")].Type == "Dropdown" then
+        local savedValue = restorationQueue[dropdownFrame:GetAttribute("ElementID")].Value
+        setDropdownValue(savedValue)
+        print("[GuiLibrary] Restored Dropdown on creation:", dropdownFrame:GetAttribute("ElementID"), "=", savedValue)
+        restorationQueue[dropdownFrame:GetAttribute("ElementID")] = nil
+    end
+
     table.insert(tab.Elements, dropdownFrame)
-    return {Frame = dropdownFrame, GetValue = function() return currentSelection end}
+    return {Frame=dropdownFrame,GetValue=function() return currentSelection end, SetValue=setDropdownValue}
 end
 
--- Label Component
 function GuiLibrary:CreateLabel(tab, text)
     local label = Instance.new("TextLabel")
     label.Name = text .. "Label"
@@ -1105,12 +961,10 @@ function GuiLibrary:CreateLabel(tab, text)
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = tab.Content
-    
     table.insert(tab.Elements, label)
     return label
 end
 
--- Section Component
 function GuiLibrary:CreateSection(tab, title)
     local sectionFrame = Instance.new("Frame")
     sectionFrame.Name = title .. "Section"
@@ -1118,9 +972,7 @@ function GuiLibrary:CreateSection(tab, title)
     sectionFrame.BackgroundColor3 = COLORS.BORDER
     sectionFrame.BorderSizePixel = 0
     sectionFrame.Parent = tab.Content
-    
     createCorner(sectionFrame, 4)
-    
     local sectionLabel = Instance.new("TextLabel")
     sectionLabel.Size = UDim2.new(1, -20, 1, 0)
     sectionLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -1131,12 +983,10 @@ function GuiLibrary:CreateSection(tab, title)
     sectionLabel.Font = Enum.Font.GothamBold
     sectionLabel.TextXAlignment = Enum.TextXAlignment.Left
     sectionLabel.Parent = sectionFrame
-    
     table.insert(tab.Elements, sectionFrame)
     return sectionFrame
 end
 
--- Input/TextBox Component
 function GuiLibrary:CreateInput(tab, placeholder, callback)
     local inputFrame = Instance.new("Frame")
     inputFrame.Name = placeholder .. "Input"
@@ -1144,9 +994,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
     inputFrame.BackgroundColor3 = COLORS.SECONDARY
     inputFrame.BorderSizePixel = 0
     inputFrame.Parent = tab.Content
-    
     createCorner(inputFrame, 6)
-    
     local textBox = Instance.new("TextBox")
     textBox.Size = UDim2.new(1, -20, 1, -10)
     textBox.Position = UDim2.new(0, 10, 0, 5)
@@ -1160,42 +1008,62 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
     textBox.BorderSizePixel = 0
     textBox.ClearTextOnFocus = false
     textBox.Parent = inputFrame
-    
     createCorner(textBox, 4)
-    
     textBox.FocusLost:Connect(function(enterPressed)
-        if callback and enterPressed then
-            callback(textBox.Text)
-        end
+        inputFrame:SetAttribute("InputValue", textBox.Text)
+        if callback and enterPressed then callback(textBox.Text) end
+        saveConfig(nil, true)
     end)
-    
-    textBox.Focused:Connect(function()
-        createStroke(textBox, 2, COLORS.ACCENT)
-    end)
-    
+    textBox.Focused:Connect(function() createStroke(textBox, 2, COLORS.ACCENT) end)
     textBox.FocusLost:Connect(function()
         local stroke = textBox:FindFirstChild("UIStroke")
         if stroke then stroke:Destroy() end
     end)
-    
+
+    inputFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. placeholder:gsub("%s+", "_") .. "_Input")
+    inputFrame:SetAttribute("WidgetType", "Input")
+    inputFrame:SetAttribute("InputValue", "")
+
+    local function setInput(value)
+        if type(value) == "string" then
+            textBox.Text = value
+            inputFrame:SetAttribute("InputValue", value)
+            if callback then callback(value) end
+            if not isInitializing then saveConfig(nil, true) end
+        end
+    end
+
+    elementSetters[inputFrame] = setInput
+
+    if restorationQueue[inputFrame:GetAttribute("ElementID")] and restorationQueue[inputFrame:GetAttribute("ElementID")].Type == "Input" then
+        local savedValue = restorationQueue[inputFrame:GetAttribute("ElementID")].Value
+        if setInput(savedValue) then
+            print("[GuiLibrary] Restored Input on creation:", inputFrame:GetAttribute("ElementID"), "=", savedValue)
+            restorationQueue[inputFrame:GetAttribute("ElementID")] = nil
+        end
+    end
+
     table.insert(tab.Elements, inputFrame)
     return {Frame = inputFrame, TextBox = textBox, GetValue = function() return textBox.Text end}
 end
 
--- Color Picker Component
 function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
+    if not tab or not tab.Content then
+        warn("[GuiLibrary] CreateColorPicker: invalid tab provided")
+        return nil
+    end
+
     local colorFrame = Instance.new("Frame")
     colorFrame.Name = text .. "ColorPicker"
-    colorFrame.Size = UDim2.new(1, 0, 0, 35)
+    colorFrame.Size = UDim2.new(1, 0, 0, 50)
     colorFrame.BackgroundColor3 = COLORS.SECONDARY
     colorFrame.BorderSizePixel = 0
     colorFrame.Parent = tab.Content
-    
     createCorner(colorFrame, 6)
-    
+
     local colorLabel = Instance.new("TextLabel")
-    colorLabel.Size = UDim2.new(1, -50, 1, 0)
-    colorLabel.Position = UDim2.new(0, 10, 0, 0)
+    colorLabel.Size = UDim2.new(0.4, 0, 0, 20)
+    colorLabel.Position = UDim2.new(0, 10, 0, 5)
     colorLabel.BackgroundTransparency = 1
     colorLabel.Text = text
     colorLabel.TextColor3 = COLORS.TEXT
@@ -1203,61 +1071,383 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     colorLabel.Font = Enum.Font.Gotham
     colorLabel.TextXAlignment = Enum.TextXAlignment.Left
     colorLabel.Parent = colorFrame
-    
+
     local colorDisplay = Instance.new("TextButton")
-    colorDisplay.Size = UDim2.new(0, 30, 0, 25)
-    colorDisplay.Position = UDim2.new(1, -35, 0.5, -12.5)
+    colorDisplay.Size = UDim2.new(0, 40, 0, 40)
+    colorDisplay.Position = UDim2.new(0, 10, 0, 5)
     colorDisplay.BackgroundColor3 = defaultColor or Color3.new(1, 1, 1)
     colorDisplay.Text = ""
     colorDisplay.BorderSizePixel = 0
     colorDisplay.Parent = colorFrame
-    
     createCorner(colorDisplay, 6)
     createStroke(colorDisplay, 2, COLORS.BORDER)
-    
+
+    local rLabel = Instance.new("TextLabel")
+    rLabel.Size = UDim2.new(0, 15, 0, 20)
+    rLabel.Position = UDim2.new(0.4, 10, 0, 5)
+    rLabel.BackgroundTransparency = 1
+    rLabel.Text = "R:"
+    rLabel.TextColor3 = COLORS.TEXT
+    rLabel.TextSize = 12
+    rLabel.Font = Enum.Font.Gotham
+    rLabel.Parent = colorFrame
+
+    local rInput = Instance.new("TextBox")
+    rInput.Size = UDim2.new(0, 50, 0, 20)
+    rInput.Position = UDim2.new(0.4, 25, 0, 5)
+    rInput.BackgroundColor3 = COLORS.PRIMARY
+    rInput.Text = tostring(math.floor((defaultColor and defaultColor.R or 1) * 255))
+    rInput.PlaceholderText = "0-255"
+    rInput.PlaceholderColor3 = COLORS.TEXT_MUTED
+    rInput.TextColor3 = COLORS.TEXT
+    rInput.TextSize = 12
+    rInput.Font = Enum.Font.Gotham
+    rInput.BorderSizePixel = 0
+    rInput.Parent = colorFrame
+    createCorner(rInput, 4)
+
+    local gLabel = Instance.new("TextLabel")
+    gLabel.Size = UDim2.new(0, 15, 0, 20)
+    gLabel.Position = UDim2.new(0.4, 85, 0, 5)
+    gLabel.BackgroundTransparency = 1
+    gLabel.Text = "G:"
+    gLabel.TextColor3 = COLORS.TEXT
+    gLabel.TextSize = 12
+    gLabel.Font = Enum.Font.Gotham
+    gLabel.Parent = colorFrame
+
+    local gInput = Instance.new("TextBox")
+    gInput.Size = UDim2.new(0, 50, 0, 20)
+    gInput.Position = UDim2.new(0.4, 100, 0, 5)
+    gInput.BackgroundColor3 = COLORS.PRIMARY
+    gInput.Text = tostring(math.floor((defaultColor and defaultColor.G or 1) * 255))
+    gInput.PlaceholderText = "0-255"
+    gInput.PlaceholderColor3 = COLORS.TEXT_MUTED
+    gInput.TextColor3 = COLORS.TEXT
+    gInput.TextSize = 12
+    gInput.Font = Enum.Font.Gotham
+    gInput.BorderSizePixel = 0
+    gInput.Parent = colorFrame
+    createCorner(gInput, 4)
+
+    local bLabel = Instance.new("TextLabel")
+    bLabel.Size = UDim2.new(0, 15, 0, 20)
+    bLabel.Position = UDim2.new(0.4, 160, 0, 5)
+    bLabel.BackgroundTransparency = 1
+    bLabel.Text = "B:"
+    bLabel.TextColor3 = COLORS.TEXT
+    bLabel.TextSize = 12
+    bLabel.Font = Enum.Font.Gotham
+    bLabel.Parent = colorFrame
+
+    local bInput = Instance.new("TextBox")
+    bInput.Size = UDim2.new(0, 50, 0, 20)
+    bInput.Position = UDim2.new(0.4, 175, 0, 5)
+    bInput.BackgroundColor3 = COLORS.PRIMARY
+    bInput.Text = tostring(math.floor((defaultColor and defaultColor.B or 1) * 255))
+    bInput.PlaceholderText = "0-255"
+    bInput.PlaceholderColor3 = COLORS.TEXT_MUTED
+    bInput.TextColor3 = COLORS.TEXT
+    bInput.TextSize = 12
+    bInput.Font = Enum.Font.Gotham
+    bInput.BorderSizePixel = 0
+    bInput.Parent = colorFrame
+    createCorner(bInput, 4)
+
     local currentColor = defaultColor or Color3.new(1, 1, 1)
-    
-    colorDisplay.MouseButton1Click:Connect(function()
-        local colors = {
-            Color3.new(1, 0, 0),
-            Color3.new(0, 1, 0),
-            Color3.new(0, 0, 1),
-            Color3.new(1, 1, 0),
-            Color3.new(1, 0, 1),
-            Color3.new(0, 1, 1),
-            Color3.new(1, 1, 1),
-            Color3.new(0, 0, 0)
-        }
-        
-        local currentIndex = 1
-        for i, color in ipairs(colors) do
-            if currentColor == color then
-                currentIndex = i
-                break
-            end
-        end
-        
-        currentIndex = currentIndex % #colors + 1
-        currentColor = colors[currentIndex]
-        
-        createTween(colorDisplay, {BackgroundColor3 = currentColor})
-        
+    local hue, saturation, value = Color3.toHSV(currentColor)
+    local popupOpen = false
+    local isDraggingSV, isDraggingHue = false, false
+
+    local popupFrame = Instance.new("Frame")
+    popupFrame.Name = "ColorPickerPopup"
+    popupFrame.Size = UDim2.new(0, 300, 0, 260)
+    popupFrame.Position = UDim2.new(0, 0, 1, 5)
+    popupFrame.BackgroundColor3 = COLORS.PRIMARY
+    popupFrame.BorderSizePixel = 0
+    popupFrame.Visible = false
+    popupFrame.ClipsDescendants = true
+    popupFrame.Parent = colorFrame
+    createCorner(popupFrame, 8)
+    createStroke(popupFrame, 2, COLORS.BORDER)
+
+    local svFrame = Instance.new("Frame")
+    svFrame.Name = "SVFrame"
+    svFrame.Size = UDim2.new(0, 200, 0, 200)
+    svFrame.Position = UDim2.new(0, 10, 0, 10)
+    svFrame.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+    svFrame.BorderSizePixel = 0
+    svFrame.Parent = popupFrame
+    createCorner(svFrame, 6)
+
+    local svWhite = Instance.new("Frame")
+    svWhite.Size = UDim2.new(1, 0, 1, 0)
+    svWhite.BackgroundColor3 = Color3.new(1, 1, 1)
+    svWhite.BackgroundTransparency = 0
+    svWhite.BorderSizePixel = 0
+    svWhite.Parent = svFrame
+    local satGradient = Instance.new("UIGradient")
+    satGradient.Rotation = 0
+    satGradient.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1))
+    satGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    satGradient.Parent = svWhite
+
+    local svBlack = Instance.new("Frame")
+    svBlack.Size = UDim2.new(1, 0, 1, 0)
+    svBlack.BackgroundColor3 = Color3.new(0, 0, 0)
+    svBlack.BackgroundTransparency = 0
+    svBlack.BorderSizePixel = 0
+    svBlack.Parent = svFrame
+    local valGradient = Instance.new("UIGradient")
+    valGradient.Rotation = 90
+    valGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(0, 0, 0)),
+        ColorSequenceKeypoint.new(1, Color3.new(0, 0, 0))
+    })
+    valGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(1, 0)
+    })
+    valGradient.Parent = svBlack
+
+    local svMarker = Instance.new("Frame")
+    svMarker.Size = UDim2.new(0, 10, 0, 10)
+    svMarker.AnchorPoint = Vector2.new(0.5, 0.5)
+    svMarker.BackgroundColor3 = COLORS.BORDER
+    svMarker.BorderSizePixel = 1
+    svMarker.Parent = svFrame
+    createCorner(svMarker, 6)
+
+    local hueFrame = Instance.new("Frame")
+    hueFrame.Name = "HueFrame"
+    hueFrame.Size = UDim2.new(0, 30, 0, 200)
+    hueFrame.Position = UDim2.new(0, 220, 0, 10)
+    hueFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+    hueFrame.BackgroundTransparency = 0
+    hueFrame.BorderSizePixel = 0
+    hueFrame.Parent = popupFrame
+    createCorner(hueFrame, 6)
+
+    local hueGradient = Instance.new("UIGradient")
+    hueGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+        ColorSequenceKeypoint.new(0.14, Color3.fromRGB(255, 255, 0)),
+        ColorSequenceKeypoint.new(0.28, Color3.fromRGB(0, 255, 0)),
+        ColorSequenceKeypoint.new(0.42, Color3.fromRGB(0, 255, 255)),
+        ColorSequenceKeypoint.new(0.57, Color3.fromRGB(0, 0, 255)),
+        ColorSequenceKeypoint.new(0.71, Color3.fromRGB(255, 0, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+    })
+    hueGradient.Rotation = 90
+    hueGradient.Transparency = NumberSequence.new(0)
+    hueGradient.Parent = hueFrame
+
+    local hueMarker = Instance.new("Frame")
+    hueMarker.Size = UDim2.new(1, 0, 0, 4)
+    hueMarker.Position = UDim2.new(0, 0, hue, 0)
+    hueMarker.BackgroundColor3 = COLORS.TEXT
+    hueMarker.BorderSizePixel = 0
+    hueMarker.Parent = hueFrame
+
+    local function updatePopupMarkers()
+        local satPos = saturation * svFrame.AbsoluteSize.X
+        local valPos = (1 - value) * svFrame.AbsoluteSize.Y
+        svMarker.Position = UDim2.new(0, satPos, 0, valPos)
+        hueMarker.Position = UDim2.new(0, 0, hue, 0)
+    end
+
+    local function updateSVAndHueElements()
+        svFrame.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+        popupFrame.BackgroundColor3 = COLORS.PRIMARY
+        updatePopupMarkers()
+    end
+
+    local function setHSV(newH, newS, newV)
+        hue = math.clamp(newH or hue, 0, 1)
+        saturation = math.clamp(newS or saturation, 0, 1)
+        value = math.clamp(newV or value, 0, 1)
+        currentColor = Color3.fromHSV(hue, saturation, value)
+        rInput.Text = tostring(math.floor(currentColor.R * 255))
+        gInput.Text = tostring(math.floor(currentColor.G * 255))
+        bInput.Text = tostring(math.floor(currentColor.B * 255))
+        colorDisplay.BackgroundColor3 = currentColor
+        colorFrame:SetAttribute("ColorValue", currentColor)
+        updateSVAndHueElements()
         if callback then callback(currentColor) end
+        if not isInitializing then saveConfig(nil, true) end
+    end
+
+    local function setColor(valueInput)
+        local parsedColor = nil
+        if typeof(valueInput) == "Color3" then
+            parsedColor = valueInput
+        elseif type(valueInput) == "table" and valueInput.R and valueInput.G and valueInput.B then
+            parsedColor = Color3.new(valueInput.R, valueInput.G, valueInput.B)
+        end
+
+        if parsedColor then
+            currentColor = parsedColor
+            hue, saturation, value = Color3.toHSV(currentColor)
+            rInput.Text = tostring(math.floor(currentColor.R * 255))
+            gInput.Text = tostring(math.floor(currentColor.G * 255))
+            bInput.Text = tostring(math.floor(currentColor.B * 255))
+            colorDisplay.BackgroundColor3 = currentColor
+            colorFrame:SetAttribute("ColorValue", currentColor)
+            updateSVAndHueElements()
+            if callback then callback(currentColor) end
+            if not isInitializing then saveConfig(nil, true) end
+            return true
+        end
+        return false
+    end
+
+    local function screenPosFromInput(input)
+        local pos = nil
+        if typeof(input) == "Vector3" then
+            pos = input
+        elseif typeof(input) == "Vector2" then
+            pos = input
+        elseif typeof(input) == "Instance" and input.Position then
+            pos = input.Position
+        elseif input and input.Position then
+            pos = input.Position
+        else
+            pos = UserInputService:GetMouseLocation()
+        end
+
+        if typeof(pos) == "Vector3" then
+            return Vector2.new(pos.X, pos.Y)
+        elseif typeof(pos) == "Vector2" then
+            return pos
+        else
+            return UserInputService:GetMouseLocation()
+        end
+    end
+
+    local function pickFromSV(source)
+        local cursor = screenPosFromInput(source)
+        local localPos = cursor - svFrame.AbsolutePosition
+        local x = math.clamp(localPos.X / svFrame.AbsoluteSize.X, 0, 1)
+        local y = math.clamp(localPos.Y / svFrame.AbsoluteSize.Y, 0, 1)
+        setHSV(hue, x, 1 - y)
+    end
+
+    local function pickFromHue(source)
+        local cursor = screenPosFromInput(source)
+        local localPos = cursor - hueFrame.AbsolutePosition
+        local y = math.clamp(localPos.Y / hueFrame.AbsoluteSize.Y, 0, 1)
+        setHSV(y, saturation, value)
+    end
+
+    svFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingSV = true
+            pickFromSV(input.Position)
+        end
     end)
-    
-    colorDisplay.MouseEnter:Connect(function()
-        createTween(colorDisplay, {Size = UDim2.new(0, 32, 0, 27)})
+
+    svFrame.InputChanged:Connect(function(input)
+        if isDraggingSV and input.UserInputType == Enum.UserInputType.MouseMovement then
+            pickFromSV(input.Position)
+        end
     end)
-    
-    colorDisplay.MouseLeave:Connect(function()
-        createTween(colorDisplay, {Size = UDim2.new(0, 30, 0, 25)})
+
+    svFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingSV = false
+        end
     end)
-    
+
+    hueFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingHue = true
+            pickFromHue(input.Position)
+        end
+    end)
+
+    hueFrame.InputChanged:Connect(function(input)
+        if isDraggingHue and input.UserInputType == Enum.UserInputType.MouseMovement then
+            pickFromHue(input.Position)
+        end
+    end)
+
+    hueFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingHue = false
+        end
+    end)
+
+    local baseHeight = 50
+    local popupHeight = 250
+
+    popupFrame.Position = UDim2.new(0, 10, 0, baseHeight)
+    popupFrame.Size = UDim2.new(0, 300, 0, 240)
+    popupFrame.ZIndex = 1000
+
+    colorDisplay.MouseButton1Click:Connect(function()
+        popupOpen = not popupOpen
+        if popupOpen then
+            -- Expand the host frame so layout pushes elements down like dropdown
+            createTween(colorFrame, {Size = UDim2.new(1, 0, 0, baseHeight + popupFrame.Size.Y.Offset)})
+            popupFrame.Visible = true
+            popupFrame.ZIndex = 1001
+        else
+            createTween(colorFrame, {Size = UDim2.new(1, 0, 0, baseHeight)})
+            popupFrame.Visible = false
+        end
+    end)
+
+    rInput.FocusLost:Connect(function()
+        local r = tonumber(rInput.Text) or 0
+        local g = tonumber(gInput.Text) or 0
+        local b = tonumber(bInput.Text) or 0
+        r = math.clamp(r, 0, 255)
+        g = math.clamp(g, 0, 255)
+        b = math.clamp(b, 0, 255)
+        setColor(Color3.new(r / 255, g / 255, b / 255))
+    end)
+
+    gInput.FocusLost:Connect(function()
+        local r = tonumber(rInput.Text) or 0
+        local g = tonumber(gInput.Text) or 0
+        local b = tonumber(bInput.Text) or 0
+        r = math.clamp(r, 0, 255)
+        g = math.clamp(g, 0, 255)
+        b = math.clamp(b, 0, 255)
+        setColor(Color3.new(r / 255, g / 255, b / 255))
+    end)
+
+    bInput.FocusLost:Connect(function()
+        local r = tonumber(rInput.Text) or 0
+        local g = tonumber(gInput.Text) or 0
+        local b = tonumber(bInput.Text) or 0
+        r = math.clamp(r, 0, 255)
+        g = math.clamp(g, 0, 255)
+        b = math.clamp(b, 0, 255)
+        setColor(Color3.new(r / 255, g / 255, b / 255))
+    end)
+
+    colorFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_ColorPicker")
+    colorFrame:SetAttribute("WidgetType", "ColorPicker")
+    colorFrame:SetAttribute("ColorValue", currentColor)
+
+    elementSetters[colorFrame] = setColor
+
+    if restorationQueue[colorFrame:GetAttribute("ElementID")] and restorationQueue[colorFrame:GetAttribute("ElementID")].Type == "ColorPicker" then
+        local savedValue = restorationQueue[colorFrame:GetAttribute("ElementID")].Value
+        if setColor(savedValue) then
+            print("[GuiLibrary] Restored ColorPicker on creation:", colorFrame:GetAttribute("ElementID"), "=", savedValue)
+            restorationQueue[colorFrame:GetAttribute("ElementID")] = nil
+        end
+    end
+
     table.insert(tab.Elements, colorFrame)
-    return {Frame = colorFrame, GetValue = function() return currentColor end, SetColor = function(color) currentColor = color; colorDisplay.BackgroundColor3 = color end}
+    return {Frame = colorFrame, GetValue = function() return currentColor end, SetColor = setColor}
 end
 
--- Keybind Component
 function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     local keybindFrame = Instance.new("Frame")
     keybindFrame.Name = text .. "Keybind"
@@ -1265,9 +1455,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     keybindFrame.BackgroundColor3 = COLORS.SECONDARY
     keybindFrame.BorderSizePixel = 0
     keybindFrame.Parent = tab.Content
-    
     createCorner(keybindFrame, 6)
-    
     local keybindLabel = Instance.new("TextLabel")
     keybindLabel.Size = UDim2.new(1, -80, 1, 0)
     keybindLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -1278,7 +1466,6 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     keybindLabel.Font = Enum.Font.Gotham
     keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
     keybindLabel.Parent = keybindFrame
-    
     local keybindButton = Instance.new("TextButton")
     keybindButton.Size = UDim2.new(0, 60, 0, 25)
     keybindButton.Position = UDim2.new(1, -65, 0.5, -12.5)
@@ -1289,74 +1476,101 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     keybindButton.Font = Enum.Font.Gotham
     keybindButton.BorderSizePixel = 0
     keybindButton.Parent = keybindFrame
-    
     createCorner(keybindButton, 4)
-    
     local currentKey = defaultKey
     local listening = false
-    
+    local lastTrigger = 0
+
+    local function setKeybind(value)
+        if value and Enum.KeyCode[value] then
+            currentKey = Enum.KeyCode[value]
+            keybindButton.Text = currentKey.Name
+            keybindFrame:SetAttribute("KeybindValue", currentKey.Name)
+            return true
+        elseif value == "None" or not value then
+            currentKey = nil
+            keybindButton.Text = "None"
+            keybindFrame:SetAttribute("KeybindValue", "None")
+            return true
+        end
+        return false
+    end
+
     keybindButton.MouseButton1Click:Connect(function()
         if listening then return end
-        
         listening = true
         keybindButton.Text = "..."
-        createTween(keybindButton, {BackgroundColor3 = COLORS.WARNING})
-        
+        createTween(keybindButton,{BackgroundColor3 = COLORS.WARNING})
         local connection
         connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if gameProcessed then return end
-            
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 currentKey = input.KeyCode
                 keybindButton.Text = input.KeyCode.Name
-                
+                keybindFrame:SetAttribute("KeybindValue", input.KeyCode.Name)
                 listening = false
-                createTween(keybindButton, {BackgroundColor3 = COLORS.PRIMARY})
-                connection:Disconnect()
+                createTween(keybindButton,{BackgroundColor3 = COLORS.PRIMARY})
+                if connection then connection:Disconnect() end
+                saveConfig(nil,true)
             end
         end)
     end)
-    
+
+    local keybindConnection
+    keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed or listening then return end
+        if tick() - lastTrigger < 0.2 then return end
+        lastTrigger = tick()
+        if currentKey and input.KeyCode == currentKey then
+            if callback then callback() end
+            print("[GuiLibrary] Keybind triggered:", text, "=", currentKey.Name)
+        end
+    end)
+    table.insert(activeInputConnections, keybindConnection)
+
+    keybindFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Keybind")
+    keybindFrame:SetAttribute("WidgetType", "Keybind")
     if currentKey then
-        UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if gameProcessed or listening then return end
-            
-            if input.KeyCode == currentKey and callback then
-                callback()
-            end
-        end)
+        keybindFrame:SetAttribute("KeybindValue", currentKey.Name)
+    else
+        keybindFrame:SetAttribute("KeybindValue", "None")
     end
-    
+
+    elementSetters[keybindFrame] = function(value)
+        if setKeybind(value) then
+            if not isInitializing then
+                saveConfig(nil, true)
+            end
+        end
+    end
+
+    if restorationQueue[keybindFrame:GetAttribute("ElementID")] and restorationQueue[keybindFrame:GetAttribute("ElementID")].Type == "Keybind" then
+        local savedValue = restorationQueue[keybindFrame:GetAttribute("ElementID")].Value
+        if setKeybind(savedValue) then
+            print("[GuiLibrary] Restored Keybind on creation:", keybindFrame:GetAttribute("ElementID"), "=", savedValue)
+            restorationQueue[keybindFrame:GetAttribute("ElementID")] = nil
+        end
+    end
+
     table.insert(tab.Elements, keybindFrame)
-    return {Frame = keybindFrame, GetKey = function() return currentKey end}
+    return {Frame = keybindFrame, GetKey = function() return currentKey end, SetKey = setKeybind}
 end
 
--- Notification System
 function GuiLibrary:CreateNotification(title, message, duration, notifType)
     duration = duration or 3
     notifType = notifType or "info"
-    
-    local colors = {
-        info = COLORS.ACCENT,
-        success = COLORS.SUCCESS,
-        warning = COLORS.WARNING,
-        error = COLORS.DANGER
-    }
-    
+    local colors = { info = COLORS.ACCENT, success = COLORS.SUCCESS, warning = COLORS.WARNING, error = COLORS.DANGER }
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "NotificationGui"
     notifGui.Parent = game.CoreGui
-    
     local notifFrame = Instance.new("Frame")
     notifFrame.Size = UDim2.new(0, 300, 0, 80)
     notifFrame.Position = UDim2.new(1, 0, 0, 50)
     notifFrame.BackgroundColor3 = COLORS.PRIMARY
     notifFrame.BorderSizePixel = 0
     notifFrame.Parent = notifGui
-    
     createCorner(notifFrame, 8)
     createStroke(notifFrame, 2, colors[notifType])
-    
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Size = UDim2.new(1, -20, 0, 25)
     titleLabel.Position = UDim2.new(0, 10, 0, 5)
@@ -1367,7 +1581,6 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = notifFrame
-    
     local messageLabel = Instance.new("TextLabel")
     messageLabel.Size = UDim2.new(1, -20, 0, 45)
     messageLabel.Position = UDim2.new(0, 10, 0, 25)
@@ -1379,31 +1592,15 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
     messageLabel.TextXAlignment = Enum.TextXAlignment.Left
     messageLabel.TextWrapped = true
     messageLabel.Parent = notifFrame
-    
-    createTween(notifFrame, {Position = UDim2.new(1, -310, 0, 50)})
-    
-    wait(duration)
-    createTween(notifFrame, {Position = UDim2.new(1, 0, 0, 50)})
-    wait(ANIM_TIME)
+    createTween(notifFrame,{Position = UDim2.new(1, -310, 0, 50)})
+    task.wait(duration)
+    createTween(notifFrame,{Position = UDim2.new(1, 0, 0, 50)})
+    task.wait(ANIM_TIME)
     notifGui:Destroy()
 end
 
--- Auto-create Settings tab for every window (hidden from tab bar)
 function GuiLibrary:CreateSettingsTab(window)
     local name = "Settings"
-    
-    local tabButton = Instance.new("TextButton")
-    tabButton.Name = name .. "Tab"
-    tabButton.Size = UDim2.new(0, 100, 1, 0)
-    tabButton.BackgroundColor3 = COLORS.SECONDARY
-    tabButton.Text = name
-    tabButton.TextColor3 = COLORS.TEXT_MUTED
-    tabButton.TextSize = 12
-    tabButton.Font = Enum.Font.Gotham
-    tabButton.BorderSizePixel = 0
-    
-    createCorner(tabButton, 6)
-    
     local tabContent = Instance.new("ScrollingFrame")
     tabContent.Name = name .. "Content"
     tabContent.Size = UDim2.new(1, 0, 1, 0)
@@ -1413,108 +1610,360 @@ function GuiLibrary:CreateSettingsTab(window)
     tabContent.ScrollBarImageColor3 = COLORS.ACCENT
     tabContent.Visible = false
     tabContent.Parent = window.TabContentContainer
-    
+
     local contentLayout = Instance.new("UIListLayout")
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
     contentLayout.Padding = UDim.new(0, 8)
     contentLayout.Parent = tabContent
-    
+
     local contentPadding = Instance.new("UIPadding")
     contentPadding.PaddingTop = UDim.new(0, 10)
     contentPadding.PaddingLeft = UDim.new(0, 10)
     contentPadding.PaddingRight = UDim.new(0, 10)
     contentPadding.PaddingBottom = UDim.new(0, 10)
     contentPadding.Parent = tabContent
-    
-    local settingsTab = {
-        Button = tabButton,
-        Content = tabContent,
-        Name = name,
-        Elements = {}
-    }
-    
+
+    local settingsTab = { Button = nil, Content = tabContent, Name = name, Elements = {} }
     window.Tabs[name] = settingsTab
-    
-    self:CreateSection(settingsTab, "UI Settings                                                        |   Library by Soldo_io")
-    
-    self:CreateKeybind(settingsTab, "Toggle GUI", Enum.KeyCode.Insert, function()
-        window.Toggle()
-    end)
-    
-    self:CreateSlider(settingsTab, "UI Scale", 0.5, 2.0, 1.0, function(value)
+
+    GuiLibrary:CreateSection(settingsTab, "UI Settings | Library by cyber_modz")
+    GuiLibrary:CreateKeybind(settingsTab, "Toggle GUI", Enum.KeyCode.Insert, function() window.Toggle() end)
+    GuiLibrary:CreateSlider(settingsTab, "UI Scale", 0.5, 2.0, 1.0, function(value)
         local newSize = UDim2.new(0, 600 * value, 0, 400 * value)
         window.CurrentSize = newSize
-        createTween(window.MainFrame, {Size = newSize}, 0.2)
+        createTween(window.MainFrame,{Size = newSize}, 0.2)
+        saveConfig(nil,true)
     end)
-    
-    self:CreateDropdown(settingsTab, "Theme", {"Dark", "Light", "Midnight", "Forest", "Ocean"}, function(theme)
-        for key, color in pairs(themes[theme]) do
-            COLORS[key] = color
-        end
+    GuiLibrary:CreateDropdown(settingsTab, "Theme", {"Dark", "Light", "Midnight", "Forest", "Ocean"}, function(theme)
+        for key,color in pairs(themes[theme]) do COLORS[key] = color end
         updateElementColors(window)
+        saveConfig(nil,true)
     end)
-    
-    self:CreateToggle(settingsTab, "Enable Animations", true, function(state)
+    GuiLibrary:CreateToggle(settingsTab, "Auto Save Config", autoSaveEnabled, function(state)
+        autoSaveEnabled = state
         if state then
-            ANIM_TIME = 0.3
+            saveConfig(nil, true)
+            GuiLibrary:CreateNotification("Auto Save", "Enabled - settings save automatically",3,"success")
         else
-            ANIM_TIME = 0.01
+            GuiLibrary:CreateNotification("Auto Save", "Disabled",2,"info")
         end
     end)
-    
-    self:CreateSection(settingsTab, "Performance                                                        |   Library by Soldo_io")
-    
-    self:CreateToggle(settingsTab, "Show FPS", false, function(state)
+    GuiLibrary:CreateToggle(settingsTab, "Enable Animations", true, function(state)
+        ANIM_TIME = state and 0.3 or 0.01
+        saveConfig(nil,true)
+    end)
+
+    GuiLibrary:CreateButton(settingsTab, "Save Config Now", function()
+        saveConfig(nil, true)
+        GuiLibrary:CreateNotification("Config", "Manually saved for this game!", 2, "success")
+    end)
+
+    GuiLibrary:CreateSection(settingsTab, "Performance | Library by cyber_modz")
+    GuiLibrary:CreateToggle(settingsTab, "Show FPS", false, function(state)
         if state and window.FPSLabel then
             window.FPSLabel.Visible = true
-            
-            spawn(function()
-                local lastTime = tick()
-                local frameCount = 0
-                
-                RunService.Heartbeat:Connect(function()
-                    if not window.FPSLabel or not window.FPSLabel.Parent then return end
-                    
-                    frameCount = frameCount + 1
-                    local currentTime = tick()
-                    
-                    if currentTime - lastTime >= 1 then
-                        local fps = math.floor(frameCount / (currentTime - lastTime))
-                        window.FPSLabel.Text = "FPS: " .. fps
-                        
-                        if fps >= 50 then
-                            window.FPSLabel.TextColor3 = COLORS.SUCCESS
-                        elseif fps >= 30 then
-                            window.FPSLabel.TextColor3 = COLORS.WARNING
-                        else
-                            window.FPSLabel.TextColor3 = COLORS.DANGER
-                        end
-                        
-                        frameCount = 0
-                        lastTime = currentTime
-                    end
-                end)
-            end)
-        elseif not state and window.FPSLabel then
+        elseif window.FPSLabel then
             window.FPSLabel.Visible = false
         end
+        saveConfig(nil,true)
     end)
-    
-    self:CreateButton(settingsTab, "Reset Settings", function()
-        self:CreateNotification("Settings", "Settings have been reset to default!", 2, "info")
-        
-        for key, color in pairs(themes["Dark"]) do
-            COLORS[key] = color
-        end
-        
+
+    GuiLibrary:CreateButton(settingsTab, "Reset Settings", function()
+        GuiLibrary:CreateNotification("Settings", "Settings have been reset to default!", 2, "info")
+        for key,color in pairs(themes["Dark"]) do COLORS[key] = color end
         window.MainFrame.Size = UDim2.new(0, 600, 0, 400)
         window.CurrentSize = UDim2.new(0, 600, 0, 400)
         ANIM_TIME = 0.3
-        
+        autoSaveEnabled = false
         updateElementColors(window)
+        saveConfig(nil,true)
     end)
-    
-    return settingsTab
+end
+
+function GuiLibrary:CreateWindow(title, size)
+    title = title or "GUI Library"
+    size = size or UDim2.new(0, 600, 0, 400)
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "GuiLibraryUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = game.CoreGui
+
+    local loader = createLoader(screenGui, 100)
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 0, 0, 0)
+    mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    mainFrame.BackgroundColor3 = COLORS.PRIMARY
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Visible = false
+    mainFrame.Parent = screenGui
+
+    createCorner(mainFrame, 12)
+    createStroke(mainFrame, 2, COLORS.BORDER)
+
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.BackgroundColor3 = COLORS.SECONDARY
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+    createCorner(titleBar, 12)
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, -140, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = title
+    titleLabel.TextColor3 = COLORS.TEXT
+    titleLabel.TextSize = 16
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = titleBar
+
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Name = "FPSLabel"
+    fpsLabel.Size = UDim2.new(0, 60, 0, 30)
+    fpsLabel.Position = UDim2.new(1, -130, 0, 5)
+    fpsLabel.BackgroundColor3 = COLORS.PRIMARY
+    fpsLabel.TextColor3 = COLORS.SUCCESS
+    fpsLabel.TextSize = 12
+    fpsLabel.Font = Enum.Font.GothamBold
+    fpsLabel.Text = "FPS: 60"
+    fpsLabel.Visible = false
+    fpsLabel.Parent = titleBar
+    createCorner(fpsLabel, 4)
+
+    local settingsButton = Instance.new("TextButton")
+    settingsButton.Name = "SettingsButton"
+    settingsButton.Size = UDim2.new(0, 30, 0, 30)
+    settingsButton.Position = UDim2.new(1, -70, 0, 5)
+    settingsButton.BackgroundTransparency = 1
+    settingsButton.Text = "⚙️"
+    settingsButton.TextColor3 = COLORS.TEXT
+    settingsButton.TextSize = 14
+    settingsButton.Font = Enum.Font.GothamBold
+    settingsButton.BorderSizePixel = 0
+    settingsButton.Parent = titleBar
+    createCorner(settingsButton, 6)
+
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "CloseButton"
+    closeButton.Size = UDim2.new(0, 30, 0, 30)
+    closeButton.Position = UDim2.new(1, -35, 0, 5)
+    closeButton.BackgroundTransparency = 1
+    closeButton.Text = "❌"
+    closeButton.TextColor3 = COLORS.DANGER
+    closeButton.TextSize = 14
+    closeButton.Font = Enum.Font.GothamBold
+    closeButton.BorderSizePixel = 0
+    closeButton.Parent = titleBar
+    createCorner(closeButton, 6)
+
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Name = "ContentFrame"
+    contentFrame.Size = UDim2.new(1, -20, 1, -60)
+    contentFrame.Position = UDim2.new(0, 10, 0, 50)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.Parent = mainFrame
+
+    local tabsContainer = Instance.new("Frame")
+    tabsContainer.Name = "TabsContainer"
+    tabsContainer.Size = UDim2.new(1, 0, 0, 35)
+    tabsContainer.BackgroundTransparency = 1
+    tabsContainer.Parent = contentFrame
+
+    local tabsLayout = Instance.new("UIListLayout")
+    tabsLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabsLayout.Padding = UDim.new(0, 5)
+    tabsLayout.Parent = tabsContainer
+
+    local tabContentContainer = Instance.new("Frame")
+    tabContentContainer.Name = "TabContentContainer"
+    tabContentContainer.Size = UDim2.new(1, 0, 1, -45)
+    tabContentContainer.Position = UDim2.new(0, 0, 0, 45)
+    tabContentContainer.BackgroundTransparency = 1
+    tabContentContainer.Parent = contentFrame
+
+    local window = {
+        ScreenGui = screenGui,
+        MainFrame = mainFrame,
+        ContentFrame = contentFrame,
+        TabsContainer = tabsContainer,
+        TabContentContainer = tabContentContainer,
+        Tabs = {},
+        CurrentTab = nil,
+        CurrentSize = size,
+        FPSLabel = fpsLabel
+    }
+
+    GuiLibrary.CurrentWindow = window
+    local isVisible = true
+
+    local function hideWindow()
+        if not isVisible then return end
+        print("[GuiLibrary] hideWindow called")
+        isVisible = false
+        window.CurrentSize = mainFrame.Size
+        createTween(mainFrame,{Size=UDim2.new(0, window.CurrentSize.X.Offset * 0.8, 0, window.CurrentSize.Y.Offset * 0.8),BackgroundTransparency=0.7},ANIM_TIME*0.5)
+        task.wait(ANIM_TIME*0.5)
+        createTween(mainFrame,{Size=UDim2.new(0,0,0,0),Position=UDim2.new(0.5,0,0.5,0),BackgroundTransparency=1,Rotation=45},ANIM_TIME*0.5)
+        task.wait(ANIM_TIME*0.5)
+        mainFrame.Visible=false
+    end
+
+    local function showWindow()
+        if isVisible then return end
+        print("[GuiLibrary] showWindow called")
+        isVisible = true
+        mainFrame.Visible = true
+        mainFrame.Size = UDim2.new(0,0,0,0)
+        mainFrame.Position = UDim2.new(0.5,0,0.5,0)
+        mainFrame.BackgroundTransparency = 1
+        mainFrame.Rotation = -45
+        createTween(mainFrame,{Size=UDim2.new(0, window.CurrentSize.X.Offset * 0.8, 0, window.CurrentSize.Y.Offset * 0.8),BackgroundTransparency=0.3,Rotation=0},ANIM_TIME*0.5)
+        task.wait(ANIM_TIME*0.5)
+        createTween(mainFrame,{Size=window.CurrentSize,Position=UDim2.new(0.5,-window.CurrentSize.X.Offset/2,0.5,-window.CurrentSize.Y.Offset/2),BackgroundTransparency=0},ANIM_TIME*0.5)
+    end
+
+    settingsButton.MouseButton1Click:Connect(function()
+        local settingsTab = window.Tabs["Settings"]
+        if not settingsTab then return end
+        if window.CurrentTab and window.Tabs[window.CurrentTab] then
+            local current = window.Tabs[window.CurrentTab]
+            if current.Button then createTween(current.Button,{BackgroundColor3=COLORS.SECONDARY,TextColor3=COLORS.TEXT_MUTED}) end
+            current.Content.Visible = false
+        end
+        window.CurrentTab = "Settings"
+        settingsTab.Content.Visible = true
+    end)
+
+    settingsButton.MouseEnter:Connect(function() createTween(settingsButton,{TextColor3=COLORS.HOVER}) end)
+    settingsButton.MouseLeave:Connect(function() createTween(settingsButton,{TextColor3=COLORS.TEXT}) end)
+
+    closeButton.MouseButton1Click:Connect(function()
+        print("[GuiLibrary] Close clicked: cleaning up inputs and closing GUI")
+        for _, conn in ipairs(activeInputConnections) do
+            if conn and conn.Connected then
+                pcall(function() conn:Disconnect() end)
+            end
+        end
+        activeInputConnections = {}
+        screenGui:Destroy()
+    end)
+
+    closeButton.MouseEnter:Connect(function() createTween(closeButton,{TextColor3=Color3.fromRGB(255,75,75)}) end)
+    closeButton.MouseLeave:Connect(function() createTween(closeButton,{TextColor3=COLORS.DANGER}) end)
+
+    task.wait(1.5)
+    loader:Destroy()
+    mainFrame.Visible = true
+    createTween(mainFrame,{Size=size,Position=UDim2.new(0.5,-size.X.Offset/2,0.5,-size.Y.Offset/2)})
+
+    window.Hide = hideWindow
+    window.Show = showWindow
+    window.Toggle = function() if isVisible then hideWindow() else showWindow() end end
+
+    isInitializing = true
+    GuiLibrary:CreateSettingsTab(window)
+    GuiLibrary:LoadConfig(window)
+    isInitializing = false
+
+    updateElementColors(window)
+    return window
+end
+
+function GuiLibrary:CreateTab(window, name)
+    local tabButton = Instance.new("TextButton")
+    tabButton.Name = name .. "Tab"
+    tabButton.Size = UDim2.new(0, 100, 1, 0)
+    tabButton.BackgroundColor3 = COLORS.SECONDARY
+    tabButton.Text = name
+    tabButton.TextColor3 = COLORS.TEXT_MUTED
+    tabButton.TextSize = 12
+    tabButton.Font = Enum.Font.Gotham
+    tabButton.BorderSizePixel = 0
+    tabButton.Parent = window.TabsContainer
+    createCorner(tabButton, 6)
+
+    local tabContent = Instance.new("ScrollingFrame")
+    tabContent.Name = name .. "Content"
+    tabContent.Size = UDim2.new(1, 0, 1, 0)
+    tabContent.BackgroundTransparency = 1
+    tabContent.BorderSizePixel = 0
+    tabContent.ScrollBarThickness = 6
+    tabContent.ScrollBarImageColor3 = COLORS.ACCENT
+    tabContent.Visible = false
+    tabContent.Parent = window.TabContentContainer
+
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    contentLayout.Padding = UDim.new(0, 8)
+    contentLayout.Parent = tabContent
+
+    local contentPadding = Instance.new("UIPadding")
+    contentPadding.PaddingTop = UDim.new(0, 10)
+    contentPadding.PaddingLeft = UDim.new(0, 10)
+    contentPadding.PaddingRight = UDim.new(0, 10)
+    contentPadding.PaddingBottom = UDim.new(0, 10)
+    contentPadding.Parent = tabContent
+
+    local function updateCanvasSize()
+        local totalHeight = contentPadding.PaddingTop.Offset + contentPadding.PaddingBottom.Offset
+        for _, child in ipairs(tabContent:GetChildren()) do
+            if child:IsA("GuiObject") and child ~= contentLayout and child ~= contentPadding then
+                totalHeight = totalHeight + child.Size.Y.Offset + contentLayout.Padding.Offset
+            end
+        end
+        tabContent.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+    end
+
+    contentLayout.Changed:Connect(updateCanvasSize)
+    tabContent.ChildAdded:Connect(updateCanvasSize)
+    tabContent.ChildRemoved:Connect(updateCanvasSize)
+    updateCanvasSize()
+
+    local tab = { Button = tabButton, Content = tabContent, Name = name, Elements = {} }
+    window.Tabs[name] = tab
+
+    local function switchTab()
+        if window.CurrentTab == name then return end
+        if window.CurrentTab and window.Tabs[window.CurrentTab] then
+            local current = window.Tabs[window.CurrentTab]
+            if current.Button then createTween(current.Button,{BackgroundColor3=COLORS.SECONDARY,TextColor3=COLORS.TEXT_MUTED}) end
+            current.Content.Visible = false
+        end
+        window.CurrentTab = name
+        createTween(tabButton,{BackgroundColor3=COLORS.ACCENT,TextColor3=COLORS.TEXT})
+        tabContent.Visible = true
+    end
+
+    tabButton.MouseButton1Click:Connect(switchTab)
+    tabButton.MouseEnter:Connect(function()
+        if window.CurrentTab ~= name then
+            createTween(tabButton,{BackgroundColor3=COLORS.HOVER})
+        end
+    end)
+    tabButton.MouseLeave:Connect(function()
+        if window.CurrentTab ~= name then
+            createTween(tabButton,{BackgroundColor3=COLORS.SECONDARY})
+        end
+    end)
+
+    if not window.CurrentTab then
+        window.CurrentTab = name
+        createTween(tabButton,{BackgroundColor3=COLORS.ACCENT,TextColor3=COLORS.TEXT})
+        tabContent.Visible = true
+    end
+
+    updateElementColors(window)
+    return tab
 end
 
 return GuiLibrary
