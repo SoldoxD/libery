@@ -36,7 +36,7 @@ local themes = {
 
 -- Auto Save System (per-game using PlaceId)
 local AUTO_SAVE_FOLDER = "GuiLibrary_AutoSaves"
-local autoSaveEnabled = true
+local autoSaveEnabled = flase
 local currentPlaceId = tostring(game.PlaceId)
 local elementSetters = {}
 local restorationQueue = {} -- Queue to restore element values when they're created
