@@ -1,328 +1,301 @@
-# Soldo GUI Library for Roblox
+# Soldo GUI Library
 
-A modern, feature-rich GUI library for Roblox executors, built with Luau. This library provides a customizable and animated user interface with a variety of components, themes, and utility functions. It is designed to be easy to use, visually appealing, and performant, making it ideal for creating professional-grade GUI systems in Roblox.
+A modern GUI library for Roblox executors, written in Luau.
 
-- **Author**: Soldo (Discord: Soldo_io)
-- **License**: MIT License
-- **Version**: 1.0.0
+- **Author**: Soldo (Discord: cyber_modz)
+- **Version**: 2.0.0
 
-## Features
-
-- **Modern Animations**: Smooth transitions and hover effects using Roblox's TweenService.
-- **Theming System**: Multiple built-in themes (Dark, Light, Midnight, Forest, Ocean) with customizable colors.
-- **Comprehensive Components**: Includes buttons, toggles, sliders, dropdowns, labels, sections, inputs, color pickers, keybinds, and notifications.
-- **Settings Tab**: Automatically generated settings tab for controlling UI scale, theme, animations, and FPS display.
-- **Responsive Design**: Draggable windows, scalable UI, and dynamic tab system.
-- **Performance Monitoring**: Optional FPS display with color-coded performance indicators.
-- **Notification System**: Customizable notifications with different types (info, success, warning, error).
+---
 
 ## Loading
 
-1. **Download a Executer**:
-   - For example AWP or Velocity.  >  https://whatexpsare.online/
-
-2. **Add to Your Project**:
-   - Paste the code into a Lua script in your Roblox executor or game environment.
-   - Ensure the script is executed in a context where `game.CoreGui` is accessible (e.g., via an executor).
-
-3. **Require the Library**:
-   ```lua
-   local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
-   ```
-
-## Usage
-
-### Creating a Window
-The `GuiLibrary:CreateWindow` function creates a new GUI window with a title and optional size.
-
 ```lua
-local window = GuiLibrary:CreateWindow("My GUI", UDim2.new(0, 600, 0, 400))
+local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
 ```
 
-### Adding Tabs
-Tabs organize content within the window. Use `GuiLibrary:CreateTab` to create a new tab.
+---
+
+## Quick Start
 
 ```lua
-local tab = GuiLibrary:CreateTab(window, "Main")
-```
+local window = GuiLibrary:CreateWindow("My Script")
+local tab    = GuiLibrary:CreateTab(window, "Main")
 
-### Adding Components
-The library supports various components that can be added to tabs. Below are examples for each component:
-
-#### Button
-Creates a clickable button with a callback function.
-
-```lua
-GuiLibrary:CreateButton(tab, "Click Me", function()
-    print("Button clicked!")
+GuiLibrary:CreateToggle(tab, "God Mode", false, function(state)
+    -- state is true/false
 end)
 ```
 
-#### Toggle
-Creates a toggle switch with an optional default state and callback.
+---
+
+## Debug Prints
+
+Set it from your script after loading the library:
 
 ```lua
-local toggle = GuiLibrary:CreateToggle(tab, "Enable Feature", true, function(state)
-    print("Toggle state:", state)
+local GuiLibrary = loadstring(game:HttpGet("..."))()
+GuiLibrary.debugPrints = true  -- enable verbose output
+```
+
+When enabled, every config save/load, restoration step, and component creation logs to the output window.
+
+---
+
+## Auto-Save System
+
+The library saves per-game configs to `GuiLibrary_AutoSaves/<PlaceId>.json`.
+
+**Behaviour on script load:**
+1. All elements initialize with the `default` value passed to their constructor.
+2. If a save file exists **and** `AutoSaveEnabled` was `true` in that file, the saved values are applied on top.
+3. If auto-save was off, defaults are kept — no restoration happens.
+
+Enable it from the **Settings** tab (Auto Save Config toggle), or call:
+
+```lua
+GuiLibrary:SaveConfig(window, true)   -- force-save right now
+GuiLibrary:LoadConfig(window)         -- load and apply saved config
+```
+
+To test whether your executor supports file I/O:
+
+```lua
+GuiLibrary:TestFileSaving()
+```
+
+---
+
+## Window
+
+```lua
+local window = GuiLibrary:CreateWindow(title, size)
+-- title  string   default "GUI Library"
+-- size   UDim2    default UDim2.new(0, 600, 0, 400)
+```
+
+**Methods on the returned window object:**
+
+| Method | Description |
+|---|---|
+| `window.Show()` | Show the window with animation |
+| `window.Hide()` | Hide the window with animation |
+| `window.Toggle()` | Toggle visibility |
+
+The title bar includes:
+- **⚙️ Settings button** — opens the built-in Settings tab
+- **❌ Close button** — destroys the GUI and disconnects all input connections
+
+---
+
+## Tabs
+
+```lua
+local tab = GuiLibrary:CreateTab(window, "Tab Name")
+```
+
+Tabs appear as buttons at the top of the window. The first tab created is selected automatically.
+
+---
+
+## Components
+
+All components are added to a tab and stacked vertically in order of creation.
+
+### Button
+
+```lua
+GuiLibrary:CreateButton(tab, "Label", function()
+    -- clicked
 end)
-print("Toggle value:", toggle.GetValue())
 ```
 
-#### Slider
-Creates a slider for selecting a value within a range.
+### Toggle
 
 ```lua
-local slider = GuiLibrary:CreateSlider(tab, "Volume", 0, 100, 50, function(value)
-    print("Slider value:", value)
+local toggle = GuiLibrary:CreateToggle(tab, "Label", default, function(state)
+    -- state: boolean
 end)
-print("Slider value:", slider.GetValue())
-slider.SetValue(75) -- Set slider to a specific value
+
+toggle.GetValue()        -- returns current boolean
+toggle.SetValue(true)    -- set programmatically (does NOT fire callback)
 ```
 
-#### Dropdown
-Creates a dropdown menu with selectable options.
+### Slider
 
 ```lua
-local dropdown = GuiLibrary:CreateDropdown(tab, "Select Option", {"Option 1", "Option 2", "Option 3"}, function(option)
-    print("Selected:", option)
+local slider = GuiLibrary:CreateSlider(tab, "Label", min, max, default, function(value)
+    -- value: number, clamped to [min, max]
 end)
-print("Dropdown value:", dropdown.GetValue())
+
+slider.GetValue()       -- returns current number
+slider.SetValue(50)     -- updates visual + fires callback, does NOT auto-save
 ```
 
-#### Label
-Creates a simple text label.
+Dragging is handled with direct property assignment (no tween lag).
+
+### Dropdown
 
 ```lua
-GuiLibrary:CreateLabel(tab, "This is a label")
-```
-
-#### Section
-Creates a titled section to group components.
-
-```lua
-GuiLibrary:CreateSection(tab, "Settings")
-```
-
-#### Input/TextBox
-Creates a text input field.
-
-```lua
-local input = GuiLibrary:CreateInput(tab, "Enter text", function(text)
-    print("Input text:", text)
+local dropdown = GuiLibrary:CreateDropdown(tab, "Label", {"A", "B", "C"}, function(selected)
+    -- selected: string
 end)
-print("Input value:", input.GetValue())
+
+dropdown.GetValue()            -- returns currently selected string
+dropdown.SetValue("B")         -- selects "B" silently if it exists in the list
+dropdown.UpdateOptions(list, keepSelection)
 ```
 
-#### Color Picker
-Creates a color picker with a predefined set of colors.
+**`UpdateOptions(newList, keepSelection)`**
+- Replaces the option list at runtime without recreating the widget.
+- `keepSelection = true` — keeps the current selection if it still exists in `newList`.
+- `keepSelection = false` — always resets to the first item and fires the callback.
+- If the old selection is no longer in the new list (even with `keepSelection = true`), it resets to the first item and fires the callback.
+
+Useful for live player lists:
 
 ```lua
-local colorPicker = GuiLibrary:CreateColorPicker(tab, "Pick Color", Color3.new(1, 0, 0), function(color)
-    print("Selected color:", color)
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(names, p.Name) end
+    end
+    return #names > 0 and names or {"(no players)"}
+end
+
+local playerDrop = GuiLibrary:CreateDropdown(tab, "Target", getPlayerNames(), function(name)
+    -- name changed
 end)
-print("Color value:", colorPicker.GetValue())
-colorPicker.SetColor(Color3.new(0, 1, 0)) -- Set a specific color
-```
 
-#### Keybind
-Creates a keybind input for assigning keyboard shortcuts.
-
-```lua
-local keybind = GuiLibrary:CreateKeybind(tab, "Action Key", Enum.KeyCode.Q, function()
-    print("Keybind triggered!")
+Players.PlayerAdded:Connect(function()
+    playerDrop.UpdateOptions(getPlayerNames(), true)
 end)
-print("Keybind value:", keybind.GetKey().Name)
+Players.PlayerRemoving:Connect(function()
+    playerDrop.UpdateOptions(getPlayerNames(), true)
+end)
 ```
 
-#### Notification
-Creates a temporary notification with a title, message, duration, and type.
+### Label
 
 ```lua
-GuiLibrary:CreateNotification("Welcome", "GUI loaded successfully!", 3, "success")
+GuiLibrary:CreateLabel(tab, "Some text")
 ```
 
-### Settings Tab
-Every window automatically includes a hidden "Settings" tab, accessible via the settings button (⚙️) in the title bar. It includes:
+### Section
 
-- **Toggle GUI Keybind**: Default key is `Insert`.
-- **UI Scale Slider**: Adjusts the window size (0.5x to 2.0x).
-- **Theme Dropdown**: Select from Dark, Light, Midnight, Forest, or Ocean themes.
-- **Enable Animations Toggle**: Enable or disable UI animations.
-- **Show FPS Toggle**: Display real-time FPS with color-coded indicators.
-- **Reset Settings Button**: Resets all settings to default.
-
-### Window Methods
-The window object returned by `GuiLibrary:CreateWindow` provides the following methods:
-
-- `window:Hide()`: Hides the window with an animation.
-- `window:Show()`: Shows the window with an animation.
-- `window:Toggle()`: Toggles the window's visibility.
+A styled header to visually group elements.
 
 ```lua
-window:Toggle() -- Toggle visibility
+GuiLibrary:CreateSection(tab, "Section Title")
 ```
+
+### Input
+
+Callback fires when the user presses Enter or unfocuses the box.
+
+```lua
+local input = GuiLibrary:CreateInput(tab, "Placeholder", function(text)
+    -- text: string (only on Enter)
+end)
+
+input.GetValue()         -- returns current text
+input.TextBox            -- direct access to the TextBox instance
+```
+
+### Color Picker
+
+```lua
+local picker = GuiLibrary:CreateColorPicker(tab, "Label", Color3.fromRGB(255,0,0), function(color)
+    -- color: Color3
+end)
+
+picker.GetValue()             -- returns current Color3
+picker.SetColor(Color3.new()) -- set programmatically
+```
+
+The popup expands inline (same layout as dropdown). RGB values can also be typed directly.
+
+### Keybind
+
+```lua
+local kb = GuiLibrary:CreateKeybind(tab, "Label", Enum.KeyCode.Insert, function()
+    -- key was pressed in-game
+end)
+
+kb.GetKey()              -- returns current Enum.KeyCode (or nil)
+kb.SetKey("F")           -- set by KeyCode name string
+```
+
+Click the button in the UI to enter listening mode, then press any key to assign it.
+
+### Notification
+
+```lua
+GuiLibrary:CreateNotification(title, message, duration, type)
+-- type: "info" | "success" | "warning" | "error"
+-- duration in seconds, default 3
+```
+
+```lua
+GuiLibrary:CreateNotification("Saved", "Config saved successfully!", 2, "success")
+```
+
+---
+
+## Built-in Settings Tab
+
+Every window gets a Settings tab automatically, accessible via ⚙️.
+
+| Setting | Description |
+|---|---|
+| Toggle GUI | Keybind to show/hide (default: Insert) |
+| UI Scale | Resize the window (0.5× – 2.0×) |
+| Theme | Dark, Light, Midnight, Forest, Ocean |
+| Auto Save Config | Save/restore element states per-game |
+| Enable Animations | Toggle all UI tweens on/off |
+| Show FPS | FPS counter in the title bar |
+| Save Config Now | Force-save immediately |
+| Reset Settings | Revert everything to defaults |
+
+---
 
 ## Themes
-The library includes five built-in themes:
 
-- **Dark**: Default dark theme with muted colors.
-- **Light**: Bright theme for better visibility in well-lit environments.
-- **Midnight**: Deep, dark theme with a sleek aesthetic.
-- **Forest**: Green-themed for a natural look.
-- **Ocean**: Blue-themed for a calming effect.
+| Name | Description |
+|---|---|
+| Dark | Default — dark grey with purple accent |
+| Light | White background, blue accent |
+| Midnight | Near-black with muted purple |
+| Forest | Dark green palette |
+| Ocean | Dark teal/blue palette |
 
-Switch themes via the Settings tab or programmatically:
+Switch programmatically (also saves if auto-save is on):
 
 ```lua
--- Example: Switch to Light theme
-for key, color in pairs({
-    PRIMARY = Color3.fromRGB(230, 230, 240),
-    -- ... other theme colors
-}) do
-    COLORS[key] = color
-end
-updateElementColors(window)
+-- done automatically when the Theme dropdown in Settings changes
 ```
+
+---
 
 ## API Reference
 
-### GuiLibrary:CreateWindow(title, size)
-- **Parameters**:
-  - `title` (string): Window title (default: "GUI Library").
-  - `size` (UDim2): Window size (default: UDim2.new(0, 600, 0, 400)).
-- **Returns**: Window object with methods `Hide`, `Show`, and `Toggle`.
+### `GuiLibrary:CreateWindow(title, size)` → window
+### `GuiLibrary:CreateTab(window, name)` → tab
+### `GuiLibrary:CreateButton(tab, text, callback)` → button
+### `GuiLibrary:CreateToggle(tab, text, default, callback)` → `{ GetValue, SetValue, Frame }`
+### `GuiLibrary:CreateSlider(tab, text, min, max, default, callback)` → `{ GetValue, SetValue, Frame }`
+### `GuiLibrary:CreateDropdown(tab, text, options, callback)` → `{ GetValue, SetValue, UpdateOptions, Frame }`
+### `GuiLibrary:CreateLabel(tab, text)` → label
+### `GuiLibrary:CreateSection(tab, title)` → frame
+### `GuiLibrary:CreateInput(tab, placeholder, callback)` → `{ GetValue, TextBox, Frame }`
+### `GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)` → `{ GetValue, SetColor, Frame }`
+### `GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)` → `{ GetKey, SetKey, Frame }`
+### `GuiLibrary:CreateNotification(title, message, duration, type)`
+### `GuiLibrary:SaveConfig(window, force)`
+### `GuiLibrary:LoadConfig(window)` → boolean
+### `GuiLibrary:TestFileSaving()` → boolean
 
-### GuiLibrary:CreateTab(window, name)
-- **Parameters**:
-  - `window` (table): Window object from `CreateWindow`.
-  - `name` (string): Tab name.
-- **Returns**: Tab object with `Button`, `Content`, `Name`, and `Elements` properties.
-
-### GuiLibrary:CreateButton(tab, text, callback)
-- **Parameters**:
-  - `tab` (table): Tab object from `CreateTab`.
-  - `text` (string): Button text.
-  - `callback` (function): Function called when the button is clicked.
-- **Returns**: Button instance.
-
-### GuiLibrary:CreateToggle(tab, text, default, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Toggle label.
-  - `default` (boolean): Initial state (default: false).
-  - `callback` (function): Function called with the toggle state.
-- **Returns**: Table with `Frame` and `GetValue` method.
-
-### GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Slider label.
-  - `min` (number): Minimum value.
-  - `max` (number): Maximum value.
-  - `default` (number): Initial value.
-  - `callback` (function): Function called with the slider value.
-- **Returns**: Table with `Frame`, `GetValue`, and `SetValue` methods.
-
-### GuiLibrary:CreateDropdown(tab, text, options, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Dropdown label.
-  - `options` (table): Array of option strings.
-  - `callback` (function): Function called with the selected option.
-- **Returns**: Table with `Frame` and `GetValue` method.
-
-### GuiLibrary:CreateLabel(tab, text)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Label text.
-- **Returns**: Label instance.
-
-### GuiLibrary:CreateSection(tab, title)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `title` (string): Section title.
-- **Returns**: Section frame instance.
-
-### GuiLibrary:CreateInput(tab, placeholder, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `placeholder` (string): Placeholder text.
-  - `callback` (function): Function called with the input text when Enter is pressed.
-- **Returns**: Table with `Frame`, `TextBox`, and `GetValue` method.
-
-### GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Color picker label.
-  - `defaultColor` (Color3): Initial color.
-  - `callback` (function): Function called with the selected color.
-- **Returns**: Table with `Frame`, `GetValue`, and `SetColor` methods.
-
-### GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
-- **Parameters**:
-  - `tab` (table): Tab object.
-  - `text` (string): Keybind label.
-  - `defaultKey` (Enum.KeyCode): Initial key.
-  - `callback` (function): Function called when the key is pressed.
-- **Returns**: Table with `Frame` and `GetKey` method.
-
-### GuiLibrary:CreateNotification(title, message, duration, notifType)
-- **Parameters**:
-  - `title` (string): Notification title.
-  - `message` (string): Notification message.
-  - `duration` (number): Display duration in seconds (default: 3).
-  - `notifType` (string): Type of notification ("info", "success", "warning", "error").
-- **Returns**: None.
-
-## Example Project
-Below is a complete example demonstrating multiple components:
-
-```lua
-local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
-
--- Create a window
-local window = GuiLibrary:CreateWindow("Demo GUI", UDim2.new(0, 500, 0, 300))
-
--- Create a tab
-local mainTab = GuiLibrary:CreateTab(window, "Main")
-
--- Add components
-GuiLibrary:CreateSection(mainTab, "Controls")
-GuiLibrary:CreateButton(mainTab, "Test Button", function()
-    GuiLibrary:CreateNotification("Button Clicked", "You clicked the button!", 2, "success")
-end)
-
-local toggle = GuiLibrary:CreateToggle(mainTab, "Enable Feature", false, function(state)
-    print("Feature enabled:", state)
-end)
-
-local slider = GuiLibrary:CreateSlider(mainTab, "Speed", 0, 100, 50, function(value)
-    print("Speed set to:", value)
-end)
-
-GuiLibrary:CreateDropdown(mainTab, "Mode", {"Easy", "Medium", "Hard"}, function(option)
-    print("Mode selected:", option)
-end)
-
-GuiLibrary:CreateLabel(mainTab, "This is a demo label")
-
--- Create another tab
-local otherTab = GuiLibrary:CreateTab(window, "Other")
-GuiLibrary:CreateInput(otherTab, "Enter username", function(text)
-    print("Username entered:", text)
-end)
-
-GuiLibrary:CreateColorPicker(otherTab, "Player Color", Color3.new(1, 0, 0), function(color)
-    print("Color selected:", color)
-end)
-
-GuiLibrary:CreateKeybind(otherTab, "Jump Key", Enum.KeyCode.Space, function()
-    print("Jump key pressed!")
-end)
-```
-
-## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+---
 
 ## Contact
-For support or inquiries, contact Soldo on Discord: **Soldo_io**.
+
+Discord: **cyber_modz**
