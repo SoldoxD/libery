@@ -34,14 +34,20 @@ local themes = {
     Ocean = { PRIMARY = Color3.fromRGB(30, 40, 50), SECONDARY = Color3.fromRGB(25, 35, 45), ACCENT = Color3.fromRGB(0, 100, 150), SUCCESS = Color3.fromRGB(50, 150, 100), WARNING = Color3.fromRGB(150, 120, 0), DANGER = Color3.fromRGB(150, 50, 50), TEXT = Color3.fromRGB(220, 230, 240), TEXT_MUTED = Color3.fromRGB(160, 180, 200), BORDER = Color3.fromRGB(40, 50, 60), HOVER = Color3.fromRGB(35, 45, 55) }
 }
 
+-- Set GuiLibrary.debugPrints = true in your script to enable verbose output
+GuiLibrary.debugPrints = false
+local function dprint(...)
+    if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end
+end
+
 -- Auto Save System (per-game using PlaceId)
 local AUTO_SAVE_FOLDER = "GuiLibrary_AutoSaves"
-local autoSaveEnabled = flase
+local autoSaveEnabled = false
 local currentPlaceId = tostring(game.PlaceId)
 local elementSetters = {}
-local restorationQueue = {} -- Queue to restore element values when they're created
-local isInitializing = false -- Prevent saves during initial setup
-local activeInputConnections = {} -- for cleanup on close
+local restorationQueue = {}
+local isInitializing = false
+local activeInputConnections = {}
 
 local function ensureAutoSaveFolder()
     pcall(function()
@@ -81,70 +87,73 @@ local function createStroke(parent, thickness, color)
     return stroke
 end
 
-local function updateElementColors(window)
+-- instant=true skips tweens and assigns directly (used during load/restore)
+local function updateElementColors(window, instant)
+    local function apply(obj, props)
+        if not obj then return end
+        if instant then
+            for k, v in pairs(props) do obj[k] = v end
+        else
+            createTween(obj, props)
+        end
+    end
+
     if window.MainFrame then
-        createTween(window.MainFrame, {BackgroundColor3 = COLORS.PRIMARY})
+        apply(window.MainFrame, {BackgroundColor3 = COLORS.PRIMARY})
         local uiStroke = window.MainFrame:FindFirstChild("UIStroke")
-        if uiStroke then createTween(uiStroke, {Color = COLORS.BORDER}) end
+        if uiStroke then apply(uiStroke, {Color = COLORS.BORDER}) end
     end
 
     local titleBar = window.MainFrame and window.MainFrame:FindFirstChild("TitleBar")
     if titleBar then
-        createTween(titleBar, {BackgroundColor3 = COLORS.SECONDARY})
-        local titleLabel = titleBar:FindFirstChild("TitleLabel")
-        if titleLabel then createTween(titleLabel, {TextColor3 = COLORS.TEXT}) end
-        local fpsLabel = titleBar:FindFirstChild("FPSLabel")
-        if fpsLabel then createTween(fpsLabel, {BackgroundColor3 = COLORS.PRIMARY}) end
-        local settingsButton = titleBar:FindFirstChild("SettingsButton")
-        if settingsButton then createTween(settingsButton, {TextColor3 = COLORS.TEXT}) end
-        local closeButton = titleBar:FindFirstChild("CloseButton")
-        if closeButton then createTween(closeButton, {TextColor3 = COLORS.DANGER}) end
+        apply(titleBar, {BackgroundColor3 = COLORS.SECONDARY})
+        apply(titleBar:FindFirstChild("TitleLabel"),   {TextColor3 = COLORS.TEXT})
+        apply(titleBar:FindFirstChild("FPSLabel"),     {BackgroundColor3 = COLORS.PRIMARY})
+        apply(titleBar:FindFirstChild("SettingsButton"), {TextColor3 = COLORS.TEXT})
+        apply(titleBar:FindFirstChild("CloseButton"),  {TextColor3 = COLORS.DANGER})
     end
 
     for tabName, tab in pairs(window.Tabs or {}) do
         if tab.Button then
             if window.CurrentTab == tabName then
-                createTween(tab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
+                apply(tab.Button, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
             else
-                createTween(tab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
+                apply(tab.Button, {BackgroundColor3 = COLORS.SECONDARY, TextColor3 = COLORS.TEXT_MUTED})
             end
         end
-        if tab.Content then createTween(tab.Content, {ScrollBarImageColor3 = COLORS.ACCENT}) end
+        if tab.Content then apply(tab.Content, {ScrollBarImageColor3 = COLORS.ACCENT}) end
         for _, element in ipairs(tab.Elements or {}) do
             if element and element:IsA("GuiObject") then
                 if element.Name:match("Button") and not element.Name:match("Tab") then
-                    createTween(element, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
+                    apply(element, {BackgroundColor3 = COLORS.ACCENT, TextColor3 = COLORS.TEXT})
                 elseif element.Name:match("Toggle") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
+                    apply(element, {BackgroundColor3 = COLORS.SECONDARY})
                     local tb = element:FindFirstChild("TextButton")
                     if tb then
                         local ind = tb:FindFirstChild("Frame")
                         if ind then
                             local isOn = element:GetAttribute("ToggleState") == 1
-                            createTween(tb, {BackgroundColor3 = isOn and COLORS.SUCCESS or COLORS.BORDER})
-                            createTween(ind, {BackgroundColor3 = COLORS.TEXT})
+                            apply(tb,  {BackgroundColor3 = isOn and COLORS.SUCCESS or COLORS.BORDER})
+                            apply(ind, {BackgroundColor3 = COLORS.TEXT})
                         end
                     end
-                    local lbl = element:FindFirstChildWhichIsA("TextLabel")
-                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
+                    apply(element:FindFirstChildWhichIsA("TextLabel"), {TextColor3 = COLORS.TEXT})
                 elseif element.Name:match("Slider") then
-                    createTween(element, {BackgroundColor3 = COLORS.SECONDARY})
+                    apply(element, {BackgroundColor3 = COLORS.SECONDARY})
                     local track = element:FindFirstChild("Frame")
                     if track then
-                        createTween(track, {BackgroundColor3 = COLORS.BORDER})
+                        apply(track, {BackgroundColor3 = COLORS.BORDER})
                         local fill = track:FindFirstChild("Frame")
-                        if fill then createTween(fill, {BackgroundColor3 = COLORS.ACCENT}) end
+                        if fill then apply(fill, {BackgroundColor3 = COLORS.ACCENT}) end
                         local handle = track:FindFirstChild("TextButton")
-                        if handle then createTween(handle, {BackgroundColor3 = COLORS.TEXT}) end
+                        if handle then apply(handle, {BackgroundColor3 = COLORS.TEXT}) end
                     end
-                    local lbl = element:FindFirstChild("SliderLabel")
-                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
+                    apply(element:FindFirstChild("SliderLabel"), {TextColor3 = COLORS.TEXT})
                     local val = element:FindFirstChild("TextLabel", true)
-                    if val and val.Name ~= "SliderLabel" then createTween(val, {TextColor3 = COLORS.ACCENT}) end
+                    if val and val.Name ~= "SliderLabel" then apply(val, {TextColor3 = COLORS.ACCENT}) end
                 elseif element.Name:match("Section") then
-                    createTween(element, {BackgroundColor3 = COLORS.BORDER})
-                    local lbl = element:FindFirstChildWhichIsA("TextLabel")
-                    if lbl then createTween(lbl, {TextColor3 = COLORS.TEXT}) end
+                    apply(element, {BackgroundColor3 = COLORS.BORDER})
+                    apply(element:FindFirstChildWhichIsA("TextLabel"), {TextColor3 = COLORS.TEXT})
                 end
             end
         end
@@ -192,8 +201,7 @@ local function saveConfig(window, force)
     if not force and not autoSaveEnabled then
         return
     end
-    
-    -- Don't save during initialization to prevent overwriting loaded config
+
     if isInitializing then
         return
     end
@@ -203,16 +211,12 @@ local function saveConfig(window, force)
         return
     end
 
-    -- Ensure folder exists
     local ok, err = pcall(function()
         if not isfolder(AUTO_SAVE_FOLDER) then
             makefolder(AUTO_SAVE_FOLDER)
         end
     end)
-    if not ok then
-        print("ERROR: Failed to create folder:", err)
-        return
-    end
+    if not ok then return end
 
     local config = {
         UIScale = window.CurrentSize.X.Offset / 600,
@@ -222,7 +226,6 @@ local function saveConfig(window, force)
         Components = {}
     }
 
-    -- persist theme name if exactly matched
     for name, theme in pairs(themes) do
         local themeMatches = true
         for k, v in pairs(theme) do
@@ -241,7 +244,6 @@ local function saveConfig(window, force)
         for _, element in ipairs(tab.Elements or {}) do
             local id = element:GetAttribute("ElementID")
             if not id then
-                -- Generate ID the same way as CreateToggle/CreateSlider
                 local elementName = element.Name or ""
                 local baseName = ""
                 if element:GetAttribute("WidgetType") == "Toggle" or elementName:match("Toggle$") then
@@ -330,141 +332,104 @@ local function saveConfig(window, force)
     local writeOk, writeErr = pcall(function()
         writefile(path, jsonStr)
     end)
-    
+
     if writeOk then
-        print("[GuiLibrary] Config saved to: " .. path)
+        dprint("Config saved to:", path)
     else
-        print("[GuiLibrary] ERROR saving config:", writeErr)
+        warn("[GuiLibrary] Failed to save config: " .. tostring(writeErr))
     end
 end
 GuiLibrary.SaveConfig = saveConfig
 
 local function loadConfig(window)
-    -- Don't check MainFrame here - it's not needed for file operations
-    if not window then
-        print("[GuiLibrary] Cannot load config: window is nil")
-        return false
-    end
+    if not window then return false end
 
     local path = getAutoSavePath()
-    print("[GuiLibrary] Attempting to load config from: " .. path)
-    
+    dprint("Loading config from:", path)
+
     local fileExists = false
-    local checkOk, checkErr = pcall(function()
-        fileExists = isfile(path)
-    end)
-    
-    if not checkOk then
-        print("[GuiLibrary] ERROR checking if file exists:", checkErr)
-        return false
-    end
-    
+    pcall(function() fileExists = isfile(path) end)
     if not fileExists then
-        print("[GuiLibrary] No save file found at: " .. path)
+        dprint("No save file found")
         return false
     end
 
     local readOk, config = pcall(function()
         return HttpService:JSONDecode(readfile(path))
     end)
-    
-    if not readOk then
-        print("[GuiLibrary] ERROR reading/decoding config:", config)
-        return false
-    end
-    
-    if not config then
-        print("[GuiLibrary] Config is nil after decode")
+    if not readOk or not config then
+        dprint("Failed to read/decode config")
         return false
     end
 
-    print("[GuiLibrary] Successfully loaded config file")
-
-    -- Restore global/window settings first (doesn't require MainFrame)
     if config.AnimationsEnabled ~= nil then
         ANIM_TIME = config.AnimationsEnabled and 0.3 or 0.01
-        print("[GuiLibrary] Restored AnimationsEnabled:", config.AnimationsEnabled)
+        dprint("Restored AnimationsEnabled:", config.AnimationsEnabled)
     end
-
     if config.AutoSaveEnabled ~= nil then
         autoSaveEnabled = config.AutoSaveEnabled == true
-        print("[GuiLibrary] Restored AutoSaveEnabled:", autoSaveEnabled)
+        dprint("Restored AutoSaveEnabled:", autoSaveEnabled)
     end
-
     if config.Theme and themes[config.Theme] then
-        for k, v in pairs(themes[config.Theme]) do
-            COLORS[k] = v
-        end
-        print("[GuiLibrary] Restored Theme:", config.Theme)
+        for k, v in pairs(themes[config.Theme]) do COLORS[k] = v end
+        dprint("Restored Theme:", config.Theme)
     end
-
-    -- Only resize if MainFrame exists
-    if window.MainFrame and config.UIScale then
+    if config.UIScale then
         local newSize = UDim2.new(0, 600 * config.UIScale, 0, 400 * config.UIScale)
         window.CurrentSize = newSize
-        createTween(window.MainFrame, {Size = newSize}, 0.25)
-        print("[GuiLibrary] Restored UIScale:", config.UIScale)
-    else
-        if config.UIScale then
-            window.CurrentSize = UDim2.new(0, 600 * config.UIScale, 0, 400 * config.UIScale)
-            print("[GuiLibrary] Restored UIScale (size only):", config.UIScale)
+        if window.MainFrame then window.MainFrame.Size = newSize end
+        dprint("Restored UIScale:", config.UIScale)
+    end
+
+    restorationQueue = {}
+
+    if autoSaveEnabled then
+        for _, entry in ipairs(config.Components or {}) do
+            restorationQueue[entry.ID] = entry.Data
+            dprint("Queued:", entry.ID, "(" .. entry.Data.Type .. ")")
         end
-    end
 
-    -- Queue component restoration data to be applied when elements are created
-    restorationQueue = {} -- Clear previous queue
-    for _, entry in ipairs(config.Components or {}) do
-        restorationQueue[entry.ID] = entry.Data
-        print("[GuiLibrary] Queued restoration for: " .. entry.ID .. " (" .. entry.Data.Type .. ")")
-    end
-
-    print("[GuiLibrary] " .. #config.Components .. " component(s) queued for restoration when created")
-
-    -- Apply queued values to any already-created elements (like Settings tab) so they restore immediately
-    for _, tab in pairs(window.Tabs or {}) do
-        for _, el in ipairs(tab.Elements or {}) do
-            local id = el:GetAttribute("ElementID")
-            if id and restorationQueue[id] then
-                local data = restorationQueue[id]
-                local setter = elementSetters[el]
-                if setter and data.Value ~= nil then
-                    setter(data.Value)
-                    print("[GuiLibrary] Applied queued value for existing element:", id, "=", data.Value)
+        for _, tab in pairs(window.Tabs or {}) do
+            for _, el in ipairs(tab.Elements or {}) do
+                local id = el:GetAttribute("ElementID")
+                if id and restorationQueue[id] then
+                    local data = restorationQueue[id]
+                    local setter = elementSetters[el]
+                    if setter and data.Value ~= nil then
+                        setter(data.Value, false)
+                        dprint("Applied:", id, "=", data.Value)
+                    end
+                    restorationQueue[id] = nil
                 end
-                restorationQueue[id] = nil
             end
         end
+    else
+        dprint("Auto-save disabled — keeping defaults")
     end
 
-    -- Apply loaded autoSaveEnabled to the settings toggle (if created)
     if window.Tabs and window.Tabs.Settings then
         for _, el in ipairs(window.Tabs.Settings.Elements or {}) do
             if el.Name == "Auto Save ConfigToggle" then
                 local setFunc = elementSetters[el]
-                if setFunc then
-                    setFunc(autoSaveEnabled)
-                    print("[GuiLibrary] Synced Auto Save Config toggle to:", autoSaveEnabled)
-                end
+                if setFunc then setFunc(autoSaveEnabled) end
                 break
             end
         end
     end
 
-    updateElementColors(window)
-    print("[GuiLibrary] Config loaded and applied successfully")
+    updateElementColors(window, true)
+    dprint("Config loaded successfully")
     return true
 end
 GuiLibrary.LoadConfig = loadConfig
 
--- Diagnostic function for debugging file I/O
 function GuiLibrary:TestFileSaving()
     print("[GuiLibrary] ===== FILE I/O DIAGNOSTIC TEST =====")
-    
+
     local testFolder = "GuiLibrary_AutoSaves"
     local testFile = testFolder .. "/test_" .. tostring(game.PlaceId) .. ".json"
     local testData = {test = true, timestamp = os.time()}
-    
-    -- Test 1: Folder creation
+
     print("[TEST 1] Creating folder: " .. testFolder)
     local folderOk, folderErr = pcall(function()
         if not isfolder(testFolder) then
@@ -478,8 +443,7 @@ function GuiLibrary:TestFileSaving()
         print("✗ Folder creation failed:", folderErr)
         return false
     end
-    
-    -- Test 2: File writing
+
     print("[TEST 2] Writing test file: " .. testFile)
     local writeOk, writeErr = pcall(function()
         writefile(testFile, HttpService:JSONEncode(testData))
@@ -489,8 +453,7 @@ function GuiLibrary:TestFileSaving()
         print("✗ File write failed:", writeErr)
         return false
     end
-    
-    -- Test 3: File checking
+
     print("[TEST 3] Checking if file exists: " .. testFile)
     local checkOk, checkErr = pcall(function()
         local exists = isfile(testFile)
@@ -505,8 +468,7 @@ function GuiLibrary:TestFileSaving()
         print("✗ File check failed:", checkErr)
         return false
     end
-    
-    -- Test 4: File reading
+
     print("[TEST 4] Reading test file: " .. testFile)
     local readOk, readData = pcall(function()
         return HttpService:JSONDecode(readfile(testFile))
@@ -521,8 +483,7 @@ function GuiLibrary:TestFileSaving()
         print("✗ File data is invalid")
         return false
     end
-    
-    -- Test 5: File deletion
+
     print("[TEST 5] Deleting test file: " .. testFile)
     local delOk, delErr = pcall(function()
         delfile(testFile)
@@ -531,7 +492,7 @@ function GuiLibrary:TestFileSaving()
     if not delOk then
         print("⚠ File deletion failed (may not support delfile):", delErr)
     end
-    
+
     print("[GuiLibrary] ===== ALL TESTS PASSED =====")
     print("[GuiLibrary] Your executor supports all required file I/O operations!")
     return true
@@ -641,12 +602,12 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
 
     elementSetters[toggleFrame] = setToggleState
 
-    -- Check if there's restoration data for this element
     if restorationQueue[elementID] and restorationQueue[elementID].Type == "Toggle" then
         local savedValue = restorationQueue[elementID].Value
         setToggleState(savedValue)
-        print("[GuiLibrary] Restored Toggle on creation:", elementID, "=", savedValue)
-        restorationQueue[elementID] = nil -- Clear from queue
+        if callback then callback(savedValue) end
+        dprint("Restored Toggle:", elementID, "=", savedValue)
+        restorationQueue[elementID] = nil
     end
 
     table.insert(tab.Elements, toggleFrame)
@@ -661,6 +622,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderFrame.BorderSizePixel = 0
     sliderFrame.Parent = tab.Content
     createCorner(sliderFrame, 6)
+
     local sliderLabel = Instance.new("TextLabel")
     sliderLabel.Name = "SliderLabel"
     sliderLabel.Size = UDim2.new(0.7, 0, 0, 20)
@@ -672,6 +634,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderLabel.Font = Enum.Font.Gotham
     sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     sliderLabel.Parent = sliderFrame
+
     local valueLabel = Instance.new("TextLabel")
     valueLabel.Size = UDim2.new(0.3, -10, 0, 20)
     valueLabel.Position = UDim2.new(0.7, 0, 0, 5)
@@ -682,6 +645,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     valueLabel.Font = Enum.Font.GothamBold
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
     valueLabel.Parent = sliderFrame
+
     local sliderTrack = Instance.new("Frame")
     sliderTrack.Size = UDim2.new(1, -20, 0, 4)
     sliderTrack.Position = UDim2.new(0, 10, 1, -15)
@@ -689,12 +653,14 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     sliderTrack.BorderSizePixel = 0
     sliderTrack.Parent = sliderFrame
     createCorner(sliderTrack, 2)
+
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new(0, 0, 1, 0)
     sliderFill.BackgroundColor3 = COLORS.ACCENT
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderTrack
     createCorner(sliderFill, 2)
+
     local sliderHandle = Instance.new("TextButton")
     sliderHandle.Size = UDim2.new(0, 16, 0, 16)
     sliderHandle.Position = UDim2.new(0, -8, 0.5, -8)
@@ -713,12 +679,15 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local currentValue = default or min
     local dragging = false
 
+    -- FIX: Use direct property assignment instead of tweens so that:
+    --   1. Dragging is perfectly responsive (no lag from 0.1s tweens)
+    --   2. SetValue() works reliably when called externally
     local function updateSlider(value, shouldSave)
         shouldSave = shouldSave == nil and true or shouldSave
         currentValue = math.clamp(value, min, max)
         local percentage = (currentValue - min) / (max - min)
-        createTween(sliderFill, {Size = UDim2.new(percentage, 0, 1, 0)}, 0.1)
-        createTween(sliderHandle, {Position = UDim2.new(percentage, -8, 0.5, -8)}, 0.1)
+        sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+        sliderHandle.Position = UDim2.new(percentage, -8, 0.5, -8)
         valueLabel.Text = string.format("%.1f", currentValue)
         sliderFrame:SetAttribute("SliderValue", currentValue)
         if callback then callback(currentValue) end
@@ -729,13 +698,15 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
 
     sliderHandle.MouseButton1Down:Connect(function() dragging = true end)
 
-    UserInputService.InputEnded:Connect(function(input)
+    -- FIX: Track UserInputService connections so they are cleaned up when the GUI closes
+    local inputEndedConn = UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and dragging then
             dragging = false
         end
     end)
+    table.insert(activeInputConnections, inputEndedConn)
 
-    UserInputService.InputChanged:Connect(function(input)
+    local inputChangedConn = UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local mousePos = input.Position.X
             local trackPos = sliderTrack.AbsolutePosition.X
@@ -744,6 +715,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
             updateSlider(min + (max - min) * percentage)
         end
     end)
+    table.insert(activeInputConnections, inputChangedConn)
 
     sliderTrack.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -768,32 +740,32 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     end)
 
     elementSetters[sliderFrame] = updateSlider
-    
-    -- Check if there's restoration data for this element
+
     if restorationQueue[elementID] and restorationQueue[elementID].Type == "Slider" then
         local savedValue = tonumber(restorationQueue[elementID].Value)
         if savedValue ~= nil then
             updateSlider(savedValue, false)
-            print("[GuiLibrary] Restored Slider on creation:", elementID, "=", savedValue)
-            restorationQueue[elementID] = nil -- Clear from queue
+            dprint("Restored Slider:", elementID, "=", savedValue)
         else
             updateSlider(currentValue, false)
         end
+        restorationQueue[elementID] = nil
     else
         updateSlider(currentValue, false)
     end
-    
+
     table.insert(tab.Elements, sliderFrame)
 
     return {
         Frame = sliderFrame,
         GetValue = function() return currentValue end,
-        SetValue = updateSlider
+        SetValue = function(value)
+            updateSlider(value, false)  -- external calls don't auto-save
+        end
     }
 end
 
 function GuiLibrary:CreateDropdown(tab, text, options, callback)
-    -- dropdown code same as previously posted
     local dropdownFrame = Instance.new("Frame")
     dropdownFrame.Name = text .. "Dropdown"
     dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
@@ -801,6 +773,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownFrame.BorderSizePixel = 0
     dropdownFrame.Parent = tab.Content
     createCorner(dropdownFrame, 6)
+
     local dropdownButton = Instance.new("TextButton")
     dropdownButton.Size = UDim2.new(1, -20, 0, 25)
     dropdownButton.Position = UDim2.new(0, 10, 0, 5)
@@ -814,6 +787,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownButton.ZIndex = 110
     dropdownButton.Parent = dropdownFrame
     createCorner(dropdownButton, 4)
+
     local dropdownArrow = Instance.new("TextLabel")
     dropdownArrow.Size = UDim2.new(0, 20, 0, 20)
     dropdownArrow.Position = UDim2.new(1, -30, 0, 5)
@@ -824,6 +798,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownArrow.Font = Enum.Font.Gotham
     dropdownArrow.ZIndex = 110
     dropdownArrow.Parent = dropdownButton
+
     local dropdownList = Instance.new("ScrollingFrame")
     dropdownList.Name = "DropdownList"
     dropdownList.Size = UDim2.new(1, -20, 0, 0)
@@ -837,90 +812,115 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropdownList.Parent = dropdownFrame
     createCorner(dropdownList, 4)
     createStroke(dropdownList, 1, COLORS.BORDER)
+
     local listLayout = Instance.new("UIListLayout")
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
     listLayout.Parent = dropdownList
+
     local contentPadding = Instance.new("UIPadding")
     contentPadding.PaddingTop = UDim.new(0, 5)
     contentPadding.PaddingBottom = UDim.new(0, 5)
     contentPadding.Parent = dropdownList
-    local currentSelection = options[1] or "None"
+
+    -- mutable copy so UpdateOptions can replace it and all closures see the new list
+    local currentOptions = {table.unpack(options)}
+    local currentSelection = currentOptions[1] or "None"
     local isOpen = false
+
     local originalPositions = {}
     local baseY = dropdownFrame.Position.Y.Offset + dropdownFrame.Size.Y.Offset
-    for i, element in ipairs(tab.Content:GetChildren()) do
+    for _, element in ipairs(tab.Content:GetChildren()) do
         if element:IsA("GuiObject") and element ~= dropdownFrame and element.Position.Y.Offset >= baseY then
             originalPositions[element] = element.Position
         end
     end
 
-    for i, opt in ipairs(options) do
-        local optionButton = Instance.new("TextButton")
-        optionButton.Size = UDim2.new(1, -10, 0, 25)
-        optionButton.BackgroundColor3 = Color3.new(0, 0, 0)
-        optionButton.BackgroundTransparency = 1
-        optionButton.Text = opt
-        optionButton.TextColor3 = COLORS.TEXT
-        optionButton.TextSize = 11
-        optionButton.Font = Enum.Font.Gotham
-        optionButton.BorderSizePixel = 0
-        optionButton.LayoutOrder = i
-        optionButton.ZIndex = 101
-        optionButton.Parent = dropdownList
-        optionButton.MouseButton1Click:Connect(function()
-            currentSelection = opt
-            dropdownButton.Text = text .. ": " .. opt
-            dropdownFrame:SetAttribute("DropdownValue", opt)
-            isOpen = false
-            createTween(dropdownArrow,{Rotation=0})
-            createTween(dropdownList,{Size=UDim2.new(1,-20,0,0)})
-            for element, pos in pairs(originalPositions) do
-                createTween(element,{Position=pos})
-            end
-            task.wait(ANIM_TIME)
-            dropdownList.Visible = false
-            dropdownFrame.Size = UDim2.new(1,0,0,35)
-            if callback then callback(opt) end
-            saveConfig(nil, true)
-        end)
-        optionButton.MouseEnter:Connect(function()
-            createTween(optionButton,{BackgroundTransparency=0.9,TextColor3=COLORS.TEXT})
-        end)
-        optionButton.MouseLeave:Connect(function()
-            createTween(optionButton,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
-        end)
+    -- close without animation (used internally before rebuilding options)
+    local function closeInstant()
+        isOpen = false
+        dropdownArrow.Rotation = 0
+        dropdownList.Size = UDim2.new(1, -20, 0, 0)
+        dropdownList.Visible = false
+        dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
+        for element, pos in pairs(originalPositions) do
+            element.Position = pos
+        end
     end
+
+    local function buildOptionButtons(opts)
+        for _, child in ipairs(dropdownList:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        dropdownList.CanvasSize = UDim2.new(0, 0, 0, #opts * 25)
+
+        for i, opt in ipairs(opts) do
+            local optionButton = Instance.new("TextButton")
+            optionButton.Size = UDim2.new(1, -10, 0, 25)
+            optionButton.BackgroundColor3 = Color3.new(0, 0, 0)
+            optionButton.BackgroundTransparency = 1
+            optionButton.Text = opt
+            optionButton.TextColor3 = COLORS.TEXT
+            optionButton.TextSize = 11
+            optionButton.Font = Enum.Font.Gotham
+            optionButton.BorderSizePixel = 0
+            optionButton.LayoutOrder = i
+            optionButton.ZIndex = 101
+            optionButton.Parent = dropdownList
+            optionButton.MouseButton1Click:Connect(function()
+                currentSelection = opt
+                dropdownButton.Text = text .. ": " .. opt
+                dropdownFrame:SetAttribute("DropdownValue", opt)
+                isOpen = false
+                createTween(dropdownArrow, {Rotation = 0})
+                createTween(dropdownList, {Size = UDim2.new(1, -20, 0, 0)})
+                for element, pos in pairs(originalPositions) do
+                    createTween(element, {Position = pos})
+                end
+                task.wait(ANIM_TIME)
+                dropdownList.Visible = false
+                dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
+                if callback then callback(opt) end
+                saveConfig(nil, true)
+            end)
+            optionButton.MouseEnter:Connect(function()
+                createTween(optionButton, {BackgroundTransparency = 0.9, TextColor3 = COLORS.TEXT})
+            end)
+            optionButton.MouseLeave:Connect(function()
+                createTween(optionButton, {BackgroundTransparency = 1, TextColor3 = COLORS.TEXT_MUTED})
+            end)
+        end
+    end
+
+    buildOptionButtons(currentOptions)
 
     dropdownButton.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         if isOpen then
-            local dropdownHeight = math.min(#options * 25, 125)
-            dropdownFrame.Size = UDim2.new(1,0,0,35 + dropdownHeight)
-            dropdownList.Size = UDim2.new(1,-20,0,0)
-            dropdownList.CanvasSize = UDim2.new(0,0,0,#options * 25)
+            local dropdownHeight = math.min(#currentOptions * 25, 125)
+            dropdownFrame.Size = UDim2.new(1, 0, 0, 35 + dropdownHeight)
+            dropdownList.Size = UDim2.new(1, -20, 0, 0)
+            dropdownList.CanvasSize = UDim2.new(0, 0, 0, #currentOptions * 25)
             dropdownList.Visible = true
-            createTween(dropdownArrow,{Rotation=180})
-            createTween(dropdownList,{Size=UDim2.new(1,-20,0,dropdownHeight)})
-            local offset = dropdownHeight
+            createTween(dropdownArrow, {Rotation = 180})
+            createTween(dropdownList, {Size = UDim2.new(1, -20, 0, dropdownHeight)})
             for element, pos in pairs(originalPositions) do
-                local newY = pos.Y.Offset + offset
-                createTween(element,{Position=UDim2.new(pos.X.Scale,pos.X.Offset,pos.Y.Scale,newY)})
+                createTween(element, {Position = UDim2.new(pos.X.Scale, pos.X.Offset, pos.Y.Scale, pos.Y.Offset + dropdownHeight)})
             end
         else
-            createTween(dropdownArrow,{Rotation=0})
-            createTween(dropdownList,{Size=UDim2.new(1,-20,0,0)})
-            for element,pos in pairs(originalPositions) do
-                createTween(element,{Position=pos})
+            createTween(dropdownArrow, {Rotation = 0})
+            createTween(dropdownList, {Size = UDim2.new(1, -20, 0, 0)})
+            for element, pos in pairs(originalPositions) do
+                createTween(element, {Position = pos})
             end
             task.wait(ANIM_TIME)
             dropdownList.Visible = false
-            dropdownFrame.Size = UDim2.new(1,0,0,35)
+            dropdownFrame.Size = UDim2.new(1, 0, 0, 35)
         end
     end)
 
     local function setDropdownValue(value)
         if not value then return end
-        for _, opt in ipairs(options) do
+        for _, opt in ipairs(currentOptions) do
             if opt == value then
                 currentSelection = opt
                 dropdownButton.Text = text .. ": " .. opt
@@ -931,23 +931,56 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
         end
     end
 
-    -- Set default selection attribute
+    -- Replace the options list entirely.
+    -- keepSelection=true keeps the current selection if it still exists in newOptions;
+    -- otherwise resets to the first item and fires the callback with it.
+    local function updateOptions(newOptions, keepSelection)
+        if isOpen then closeInstant() end
+        currentOptions = {table.unpack(newOptions)}
+        buildOptionButtons(currentOptions)
+
+        local stillValid = false
+        if keepSelection then
+            for _, opt in ipairs(currentOptions) do
+                if opt == currentSelection then
+                    stillValid = true
+                    break
+                end
+            end
+        end
+
+        if stillValid then
+            dropdownButton.Text = text .. ": " .. currentSelection
+            dropdownFrame:SetAttribute("DropdownValue", currentSelection)
+        else
+            currentSelection = currentOptions[1] or "None"
+            dropdownButton.Text = text .. ": " .. currentSelection
+            dropdownFrame:SetAttribute("DropdownValue", currentSelection)
+            if callback then callback(currentSelection) end
+        end
+    end
+
     dropdownFrame:SetAttribute("ElementID", (tab.Name or "Tab") .. "_" .. text:gsub("%s+", "_") .. "_Dropdown")
     dropdownFrame:SetAttribute("WidgetType", "Dropdown")
     dropdownFrame:SetAttribute("DropdownValue", currentSelection)
 
     elementSetters[dropdownFrame] = setDropdownValue
 
-    -- Check restoration queue for dropdown values
-    if restorationQueue[dropdownFrame:GetAttribute("ElementID")] and restorationQueue[dropdownFrame:GetAttribute("ElementID")].Type == "Dropdown" then
-        local savedValue = restorationQueue[dropdownFrame:GetAttribute("ElementID")].Value
+    local elementID = dropdownFrame:GetAttribute("ElementID")
+    if restorationQueue[elementID] and restorationQueue[elementID].Type == "Dropdown" then
+        local savedValue = restorationQueue[elementID].Value
         setDropdownValue(savedValue)
-        print("[GuiLibrary] Restored Dropdown on creation:", dropdownFrame:GetAttribute("ElementID"), "=", savedValue)
-        restorationQueue[dropdownFrame:GetAttribute("ElementID")] = nil
+        dprint("Restored Dropdown:", elementID, "=", savedValue)
+        restorationQueue[elementID] = nil
     end
 
     table.insert(tab.Elements, dropdownFrame)
-    return {Frame=dropdownFrame,GetValue=function() return currentSelection end, SetValue=setDropdownValue}
+    return {
+        Frame = dropdownFrame,
+        GetValue = function() return currentSelection end,
+        SetValue = setDropdownValue,
+        UpdateOptions = updateOptions,
+    }
 end
 
 function GuiLibrary:CreateLabel(tab, text)
@@ -1037,10 +1070,9 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
 
     if restorationQueue[inputFrame:GetAttribute("ElementID")] and restorationQueue[inputFrame:GetAttribute("ElementID")].Type == "Input" then
         local savedValue = restorationQueue[inputFrame:GetAttribute("ElementID")].Value
-        if setInput(savedValue) then
-            print("[GuiLibrary] Restored Input on creation:", inputFrame:GetAttribute("ElementID"), "=", savedValue)
-            restorationQueue[inputFrame:GetAttribute("ElementID")] = nil
-        end
+        setInput(savedValue)
+        dprint("Restored Input:", inputFrame:GetAttribute("ElementID"), "=", savedValue)
+        restorationQueue[inputFrame:GetAttribute("ElementID")] = nil
     end
 
     table.insert(tab.Elements, inputFrame)
@@ -1390,7 +1422,6 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     colorDisplay.MouseButton1Click:Connect(function()
         popupOpen = not popupOpen
         if popupOpen then
-            -- Expand the host frame so layout pushes elements down like dropdown
             createTween(colorFrame, {Size = UDim2.new(1, 0, 0, baseHeight + popupFrame.Size.Y.Offset)})
             popupFrame.Visible = true
             popupFrame.ZIndex = 1001
@@ -1401,32 +1432,23 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     end)
 
     rInput.FocusLost:Connect(function()
-        local r = tonumber(rInput.Text) or 0
-        local g = tonumber(gInput.Text) or 0
-        local b = tonumber(bInput.Text) or 0
-        r = math.clamp(r, 0, 255)
-        g = math.clamp(g, 0, 255)
-        b = math.clamp(b, 0, 255)
+        local r = math.clamp(tonumber(rInput.Text) or 0, 0, 255)
+        local g = math.clamp(tonumber(gInput.Text) or 0, 0, 255)
+        local b = math.clamp(tonumber(bInput.Text) or 0, 0, 255)
         setColor(Color3.new(r / 255, g / 255, b / 255))
     end)
 
     gInput.FocusLost:Connect(function()
-        local r = tonumber(rInput.Text) or 0
-        local g = tonumber(gInput.Text) or 0
-        local b = tonumber(bInput.Text) or 0
-        r = math.clamp(r, 0, 255)
-        g = math.clamp(g, 0, 255)
-        b = math.clamp(b, 0, 255)
+        local r = math.clamp(tonumber(rInput.Text) or 0, 0, 255)
+        local g = math.clamp(tonumber(gInput.Text) or 0, 0, 255)
+        local b = math.clamp(tonumber(bInput.Text) or 0, 0, 255)
         setColor(Color3.new(r / 255, g / 255, b / 255))
     end)
 
     bInput.FocusLost:Connect(function()
-        local r = tonumber(rInput.Text) or 0
-        local g = tonumber(gInput.Text) or 0
-        local b = tonumber(bInput.Text) or 0
-        r = math.clamp(r, 0, 255)
-        g = math.clamp(g, 0, 255)
-        b = math.clamp(b, 0, 255)
+        local r = math.clamp(tonumber(rInput.Text) or 0, 0, 255)
+        local g = math.clamp(tonumber(gInput.Text) or 0, 0, 255)
+        local b = math.clamp(tonumber(bInput.Text) or 0, 0, 255)
         setColor(Color3.new(r / 255, g / 255, b / 255))
     end)
 
@@ -1439,7 +1461,7 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     if restorationQueue[colorFrame:GetAttribute("ElementID")] and restorationQueue[colorFrame:GetAttribute("ElementID")].Type == "ColorPicker" then
         local savedValue = restorationQueue[colorFrame:GetAttribute("ElementID")].Value
         if setColor(savedValue) then
-            print("[GuiLibrary] Restored ColorPicker on creation:", colorFrame:GetAttribute("ElementID"), "=", savedValue)
+            dprint("Restored ColorPicker:", colorFrame:GetAttribute("ElementID"))
             restorationQueue[colorFrame:GetAttribute("ElementID")] = nil
         end
     end
@@ -1523,7 +1545,6 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         lastTrigger = tick()
         if currentKey and input.KeyCode == currentKey then
             if callback then callback() end
-            print("[GuiLibrary] Keybind triggered:", text, "=", currentKey.Name)
         end
     end)
     table.insert(activeInputConnections, keybindConnection)
@@ -1547,7 +1568,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     if restorationQueue[keybindFrame:GetAttribute("ElementID")] and restorationQueue[keybindFrame:GetAttribute("ElementID")].Type == "Keybind" then
         local savedValue = restorationQueue[keybindFrame:GetAttribute("ElementID")].Value
         if setKeybind(savedValue) then
-            print("[GuiLibrary] Restored Keybind on creation:", keybindFrame:GetAttribute("ElementID"), "=", savedValue)
+            dprint("Restored Keybind:", keybindFrame:GetAttribute("ElementID"), "=", savedValue)
             restorationQueue[keybindFrame:GetAttribute("ElementID")] = nil
         end
     end
@@ -1808,7 +1829,6 @@ function GuiLibrary:CreateWindow(title, size)
 
     local function hideWindow()
         if not isVisible then return end
-        print("[GuiLibrary] hideWindow called")
         isVisible = false
         window.CurrentSize = mainFrame.Size
         createTween(mainFrame,{Size=UDim2.new(0, window.CurrentSize.X.Offset * 0.8, 0, window.CurrentSize.Y.Offset * 0.8),BackgroundTransparency=0.7},ANIM_TIME*0.5)
@@ -1820,7 +1840,6 @@ function GuiLibrary:CreateWindow(title, size)
 
     local function showWindow()
         if isVisible then return end
-        print("[GuiLibrary] showWindow called")
         isVisible = true
         mainFrame.Visible = true
         mainFrame.Size = UDim2.new(0,0,0,0)
@@ -1848,7 +1867,6 @@ function GuiLibrary:CreateWindow(title, size)
     settingsButton.MouseLeave:Connect(function() createTween(settingsButton,{TextColor3=COLORS.TEXT}) end)
 
     closeButton.MouseButton1Click:Connect(function()
-        print("[GuiLibrary] Close clicked: cleaning up inputs and closing GUI")
         for _, conn in ipairs(activeInputConnections) do
             if conn and conn.Connected then
                 pcall(function() conn:Disconnect() end)
