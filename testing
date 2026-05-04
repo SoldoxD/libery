@@ -31,7 +31,7 @@ local themes = {
     Ocean    = { PRIMARY=Color3.fromRGB(12,22,38),    SECONDARY=Color3.fromRGB(8,16,30),    ACCENT=Color3.fromRGB(14,165,233),  SUCCESS=Color3.fromRGB(34,211,238),  WARNING=Color3.fromRGB(251,191,36), DANGER=Color3.fromRGB(244,63,94),   TEXT=Color3.fromRGB(224,238,255), TEXT_MUTED=Color3.fromRGB(90,125,170),  BORDER=Color3.fromRGB(26,48,78),   HOVER=Color3.fromRGB(18,34,58)  },
 }
 
-GuiLibrary.debugPrints = false
+GuiLibrary.debugPrints = true   -- ON by default while debugging save/load
 local function dprint(...) if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end end
 
 local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
@@ -45,6 +45,8 @@ local isInitializing     = false
 local activeInputConnections = {}
 
 local function getAutoSavePath() return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId .. ".json" end
+
+local function countTable(t) local n=0; for _ in pairs(t or {}) do n=n+1 end; return n end
 
 local function createTween(obj, props, t)
     if not obj or not obj.Parent then return nil end
@@ -230,17 +232,29 @@ local function saveConfig(window, force)
         end
     end
 
-    local wOk,wErr=pcall(function() writefile(getAutoSavePath(), HttpService:JSONEncode(config)) end)
-    if wOk then dprint("Config saved") else warn("[GuiLibrary] Save failed: "..tostring(wErr)) end
+    local jsonStr = HttpService:JSONEncode(config)
+    local wOk,wErr=pcall(function() writefile(getAutoSavePath(), jsonStr) end)
+    if wOk then
+        dprint(string.format("Config saved → %s | autoSave=%s, components=%d, size=%dx%d, pos=(%d,%d)",
+            getAutoSavePath(), tostring(autoSaveEnabled), #config.Components,
+            config.SizeWidth, config.SizeHeight, config.PosX, config.PosY))
+    else
+        warn("[GuiLibrary] Save failed: "..tostring(wErr))
+    end
 end
 GuiLibrary.SaveConfig = saveConfig
 
 local function loadConfig(window)
-    if not window then return false end
+    if not window then dprint("loadConfig: no window"); return false end
     local fileExists=false; pcall(function() fileExists=isfile(getAutoSavePath()) end)
-    if not fileExists then dprint("No save file"); return false end
-    local rOk,config=pcall(function() return HttpService:JSONDecode(readfile(getAutoSavePath())) end)
-    if not rOk or not config then return false end
+    dprint("loadConfig: path="..getAutoSavePath().." exists="..tostring(fileExists))
+    if not fileExists then dprint("No save file → using defaults"); return false end
+    local rawData; pcall(function() rawData = readfile(getAutoSavePath()) end)
+    dprint("loadConfig: raw bytes = "..(rawData and #rawData or 0))
+    local rOk,config=pcall(function() return HttpService:JSONDecode(rawData) end)
+    if not rOk or not config then warn("[GuiLibrary] JSON parse failed: "..tostring(config)); return false end
+    dprint(string.format("loadConfig: parsed | autoSave=%s, components=%d",
+        tostring(config.AutoSaveEnabled), config.Components and #config.Components or 0))
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
     if config.AutoSaveEnabled~=nil then autoSaveEnabled=config.AutoSaveEnabled==true end
     if config.NotificationsEnabled~=nil then GuiLibrary.NotificationsEnabled=config.NotificationsEnabled==true end
@@ -264,6 +278,8 @@ local function loadConfig(window)
     -- autoSaveEnabled only controls whether changes are auto-saved on user interaction.
     restorationQueue={}
     for _,entry in ipairs(config.Components or {}) do restorationQueue[entry.ID]=entry.Data end
+    dprint("loadConfig: restorationQueue populated with "..(config.Components and #config.Components or 0).." entries")
+    local restoredCount = 0
     for _,tab in pairs(window.Tabs or {}) do
         for _,el in ipairs(tab.Elements or {}) do
             local id=el:GetAttribute("ElementID")
@@ -271,12 +287,14 @@ local function loadConfig(window)
                 local setter=elementSetters[el]
                 local val=restorationQueue[id].Value
                 if setter and val~=nil then
-                    pcall(setter, val, false)  -- setter handles callback invocation internally
+                    local ok = pcall(setter, val, false)
+                    if ok then restoredCount = restoredCount + 1; dprint("  ✓ restored "..id.." = "..tostring(val)) end
                 end
                 restorationQueue[id]=nil
             end
         end
     end
+    dprint("loadConfig: restored "..restoredCount.." existing widgets, "..countTable(restorationQueue).." pending for late-created widgets")
     if window.Tabs and window.Tabs.Settings then
         for _,el in ipairs(window.Tabs.Settings.Elements or {}) do
             if el.Name=="Auto Save ConfigToggle" then
@@ -407,8 +425,12 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
         if callback then pcall(callback, v) end
     end
     if restorationQueue[eid] and restorationQueue[eid].Type=="Toggle" then
-        local sv=restorationQueue[eid].Value; setState(sv)
+        local sv=restorationQueue[eid].Value
+        dprint("CreateToggle["..eid.."]: restoring saved value "..tostring(sv))
+        setState(sv)
         if callback then pcall(callback, sv) end; restorationQueue[eid]=nil
+    else
+        dprint("CreateToggle["..eid.."]: no saved value, using default "..tostring(default))
     end
     table.insert(tab.Elements,f)
     return {Frame=f, GetValue=function() return isToggled end, SetValue=setState}
@@ -492,8 +514,12 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     elementCallbacks[f]=callback
     if restorationQueue[eid] and restorationQueue[eid].Type=="Slider" then
         local sv=tonumber(restorationQueue[eid].Value)
+        dprint("CreateSlider["..eid.."]: restoring saved value "..tostring(sv))
         updateSlider(sv~=nil and sv or cur,false); restorationQueue[eid]=nil
-    else updateSlider(cur,false) end
+    else
+        dprint("CreateSlider["..eid.."]: no saved value, using default "..tostring(cur))
+        updateSlider(cur,false)
+    end
 
     table.insert(tab.Elements,f)
     return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,false); if not isInitializing then saveConfig(nil,false) end end}
