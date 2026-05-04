@@ -2,8 +2,8 @@
 
 A modern GUI library for Roblox executors, written in Luau.
 
-- **Author**: Soldo (Discord: cyber_modz)
-- **Version**: 2.0.0
+- **Author:** Soldo (Discord: `cyber_modz`)
+- **Version:** 2.1.0
 
 ---
 
@@ -18,72 +18,54 @@ local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/So
 ## Quick Start
 
 ```lua
-local window = GuiLibrary:CreateWindow("My Script")
+local window = GuiLibrary:CreateWindow("My Script", UDim2.new(0, 620, 0, 420))
 local tab    = GuiLibrary:CreateTab(window, "Main")
 
 GuiLibrary:CreateToggle(tab, "God Mode", false, function(state)
-    -- state is true/false
+    print("God Mode:", state)
+end)
+
+GuiLibrary:CreateSlider(tab, "Walk Speed", 1, 200, 16, function(v)
+    game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v
 end)
 ```
 
----
-
-## Debug Prints
-
-Set it from your script after loading the library:
-
-```lua
-local GuiLibrary = loadstring(game:HttpGet("..."))()
-GuiLibrary.debugPrints = true  -- enable verbose output
-```
-
-When enabled, every config save/load, restoration step, and component creation logs to the output window.
-
----
-
-## Auto-Save System
-
-The library saves per-game configs to `GuiLibrary_AutoSaves/<PlaceId>.json`.
-
-**Behaviour on script load:**
-1. All elements initialize with the `default` value passed to their constructor.
-2. If a save file exists **and** `AutoSaveEnabled` was `true` in that file, the saved values are applied on top.
-3. If auto-save was off, defaults are kept — no restoration happens.
-
-Enable it from the **Settings** tab (Auto Save Config toggle), or call:
-
-```lua
-GuiLibrary:SaveConfig(window, true)   -- force-save right now
-GuiLibrary:LoadConfig(window)         -- load and apply saved config
-```
-
-To test whether your executor supports file I/O:
-
-```lua
-GuiLibrary:TestFileSaving()
-```
+A complete reference script demonstrating every component is in **`Example.lua`**.
 
 ---
 
 ## Window
 
 ```lua
-local window = GuiLibrary:CreateWindow(title, size)
--- title  string   default "GUI Library"
--- size   UDim2    default UDim2.new(0, 600, 0, 400)
+local window = GuiLibrary:CreateWindow(title, size, iconAsset)
 ```
 
-**Methods on the returned window object:**
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `title` | `string` | `"GUI Library"` | Title bar text |
+| `size` | `UDim2` | `UDim2.new(0, 600, 0, 400)` | Initial window size |
+| `iconAsset` | `number` \| `string` | `nil` | Roblox asset ID (or `rbxassetid://...`) shown left of the title |
+
+### Window methods
 
 | Method | Description |
 |---|---|
 | `window.Show()` | Show the window with animation |
 | `window.Hide()` | Hide the window with animation |
 | `window.Toggle()` | Toggle visibility |
+| `window.SetTitle(text)` | Change title at runtime |
+| `window.SetIcon(asset)` | Change icon at runtime (pass `nil` to remove) |
+| `window.SwitchTab(name)` | Switch to a tab by name (with slide animation) |
 
-The title bar includes:
-- **⚙️ Settings button** — opens the built-in Settings tab
-- **❌ Close button** — destroys the GUI and disconnects all input connections
+### Title bar
+
+- **Window icon** (if provided)
+- **Title text**
+- **FPS counter** (toggle in Settings)
+- **⚙ Settings button** — opens the built-in Settings tab
+- **✕ Close button** — destroys the GUI and disconnects all input listeners
+
+The window is **draggable from the title bar** and **resizable from the bottom-right grip handle**. Both position and size persist with auto-save.
 
 ---
 
@@ -93,13 +75,15 @@ The title bar includes:
 local tab = GuiLibrary:CreateTab(window, "Tab Name")
 ```
 
-Tabs appear as buttons at the top of the window. The first tab created is selected automatically.
+- The first tab created is selected automatically.
+- Tabs slide in/out horizontally when switching.
+- If too many tabs to fit, the tab bar scrolls horizontally (mouse wheel).
 
 ---
 
 ## Components
 
-All components are added to a tab and stacked vertically in order of creation.
+All components are added to a tab and stacked vertically in the order they're created.
 
 ### Button
 
@@ -116,8 +100,8 @@ local toggle = GuiLibrary:CreateToggle(tab, "Label", default, function(state)
     -- state: boolean
 end)
 
-toggle.GetValue()        -- returns current boolean
-toggle.SetValue(true)    -- set programmatically (does NOT fire callback)
+toggle.GetValue()       -- returns current boolean
+toggle.SetValue(true)   -- updates visual + fires callback
 ```
 
 ### Slider
@@ -128,10 +112,10 @@ local slider = GuiLibrary:CreateSlider(tab, "Label", min, max, default, function
 end)
 
 slider.GetValue()       -- returns current number
-slider.SetValue(50)     -- updates visual + fires callback, does NOT auto-save
+slider.SetValue(50)     -- updates visual + fires callback + saves (if auto-save on)
 ```
 
-Dragging is handled with direct property assignment (no tween lag).
+Saves only happen on **drag-end** (not every frame during a drag), keeping disk writes minimal.
 
 ### Dropdown
 
@@ -140,20 +124,23 @@ local dropdown = GuiLibrary:CreateDropdown(tab, "Label", {"A", "B", "C"}, functi
     -- selected: string
 end)
 
-dropdown.GetValue()            -- returns currently selected string
-dropdown.SetValue("B")         -- selects "B" silently if it exists in the list
-dropdown.UpdateOptions(list, keepSelection)
+dropdown.GetValue()                            -- current selection
+dropdown.SetValue("B")                         -- select an option
+dropdown.UpdateOptions(newList, keepSelection) -- replace the option list at runtime
 ```
 
 **`UpdateOptions(newList, keepSelection)`**
-- Replaces the option list at runtime without recreating the widget.
-- `keepSelection = true` — keeps the current selection if it still exists in `newList`.
-- `keepSelection = false` — always resets to the first item and fires the callback.
-- If the old selection is no longer in the new list (even with `keepSelection = true`), it resets to the first item and fires the callback.
+- `keepSelection = true` keeps the current selection if it still exists in `newList`; otherwise resets to first.
+- `keepSelection = false` always resets to the first option and fires the callback.
 
-Useful for live player lists:
+The list pops up as a floating, scrollable panel parented to the main frame, so it never gets clipped by the tab content.
+
+#### Live player list example
 
 ```lua
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
 local function getPlayerNames()
     local names = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -162,99 +149,167 @@ local function getPlayerNames()
     return #names > 0 and names or {"(no players)"}
 end
 
-local playerDrop = GuiLibrary:CreateDropdown(tab, "Target", getPlayerNames(), function(name)
-    -- name changed
+local target = GuiLibrary:CreateDropdown(tab, "Target", getPlayerNames(), function(name)
+    print("Target:", name)
 end)
 
-Players.PlayerAdded:Connect(function()
-    playerDrop.UpdateOptions(getPlayerNames(), true)
-end)
-Players.PlayerRemoving:Connect(function()
-    playerDrop.UpdateOptions(getPlayerNames(), true)
-end)
+Players.PlayerAdded:Connect(function() target.UpdateOptions(getPlayerNames(), true) end)
+Players.PlayerRemoving:Connect(function() target.UpdateOptions(getPlayerNames(), true) end)
 ```
 
 ### Label
 
 ```lua
-GuiLibrary:CreateLabel(tab, "Some text")
+GuiLibrary:CreateLabel(tab, "Some informational text")
 ```
 
 ### Section
 
-A styled header to visually group elements.
+A styled header used to visually group elements.
 
 ```lua
-GuiLibrary:CreateSection(tab, "Section Title")
+GuiLibrary:CreateSection(tab, "Movement")
 ```
 
 ### Input
 
-Callback fires when the user presses Enter or unfocuses the box.
+Callback fires when the user presses **Enter** or unfocuses the box.
 
 ```lua
 local input = GuiLibrary:CreateInput(tab, "Placeholder", function(text)
     -- text: string (only on Enter)
 end)
 
-input.GetValue()         -- returns current text
-input.TextBox            -- direct access to the TextBox instance
+input.GetValue()  -- current text
+input.TextBox     -- direct access to the underlying TextBox instance
 ```
 
 ### Color Picker
 
 ```lua
-local picker = GuiLibrary:CreateColorPicker(tab, "Label", Color3.fromRGB(255,0,0), function(color)
+local picker = GuiLibrary:CreateColorPicker(tab, "Label", Color3.fromRGB(255,80,80), function(color)
     -- color: Color3
 end)
 
-picker.GetValue()             -- returns current Color3
-picker.SetColor(Color3.new()) -- set programmatically
+picker.GetValue()                         -- current Color3
+picker.SetColor(Color3.fromRGB(0,255,0))  -- set programmatically
 ```
 
-The popup expands inline (same layout as dropdown). RGB values can also be typed directly.
+- Click the swatch to open the picker; click the X (or swatch again) to close.
+- Pick from the SV square + hue strip, or type RGB values directly.
+- The popup expands inline within the picker frame and lays out properly with surrounding components.
 
 ### Keybind
 
 ```lua
 local kb = GuiLibrary:CreateKeybind(tab, "Label", Enum.KeyCode.Insert, function()
-    -- key was pressed in-game
+    -- the bound key was pressed in-game
 end)
 
-kb.GetKey()              -- returns current Enum.KeyCode (or nil)
-kb.SetKey("F")           -- set by KeyCode name string
+kb.GetKey()       -- current Enum.KeyCode (or nil)
+kb.SetKey("F")    -- set by KeyCode name string
 ```
 
-Click the button in the UI to enter listening mode, then press any key to assign it.
+Click the button to enter listening mode, then press any key to bind it.
 
 ### Notification
 
 ```lua
 GuiLibrary:CreateNotification(title, message, duration, type)
 -- type: "info" | "success" | "warning" | "error"
--- duration in seconds, default 3
+-- duration in seconds (default = GuiLibrary.NotificationDuration, default 3)
 ```
 
 ```lua
 GuiLibrary:CreateNotification("Saved", "Config saved successfully!", 2, "success")
 ```
 
+**Stacking:** new notifications appear *below* existing ones. When one expires, the others slide up to fill its slot. Each notification has its own ScreenGui (independent layering).
+
+Notifications can be globally disabled via the Settings → "Notifications" toggle, or directly:
+
+```lua
+GuiLibrary.NotificationsEnabled = false  -- mute all notifications
+GuiLibrary.NotificationDuration = 5      -- default duration in seconds
+```
+
 ---
 
 ## Built-in Settings Tab
 
-Every window gets a Settings tab automatically, accessible via ⚙️.
+Every window gets a Settings tab automatically (open with ⚙).
+
+### Library
 
 | Setting | Description |
 |---|---|
-| Toggle GUI | Keybind to show/hide (default: Insert) |
-| UI Scale | Resize the window (0.5× – 2.0×) |
+| Toggle GUI | Keybind to show/hide the window (default: Insert) |
 | Theme | Dark, Light, Midnight, Forest, Ocean |
-| Auto Save Config | Save/restore element states per-game |
-| Enable Animations | Toggle all UI tweens on/off |
+
+### Preferences
+
+| Setting | Description |
+|---|---|
+| Auto Save Config | Auto-save changes per-game (see [Auto-Save](#auto-save-system)) |
+| Enable Animations | Master toggle for all UI tweens |
 | Show FPS | FPS counter in the title bar |
-| Save Config Now | Force-save immediately |
-| Reset Settings | Revert everything to defaults |
+| Notifications | Master enable/disable for notifications |
+| Lock Window Position | Disables dragging |
+| Notification Duration | Default duration (1–10 sec) for new notifications |
+
+### Window
+
+| Setting | Description |
+|---|---|
+| Center Window | Re-center the window on screen |
+| Reset Window Size | Restore default 600 × 400 |
+
+### Actions
+
+| Setting | Description |
+|---|---|
+| Save Config Now | Force-write the config file immediately |
+| Clear Save File | Delete the saved config (recovery from a corrupted save) |
+| Reset Settings | Revert all built-in settings to defaults |
+
+---
+
+## Auto-Save System
+
+The library writes per-game configs to:
+
+```
+GuiLibrary_AutoSaves/<PlaceId>.json
+```
+
+### What gets saved
+
+- **All widget values** — toggles, sliders, dropdowns, color pickers, inputs, keybinds.
+- **Window state** — size, position.
+- **UI preferences** — theme, animations, show FPS, notifications enabled, notification duration, lock position.
+- **`AutoSaveEnabled`** — the toggle's own state.
+
+### Behavior
+
+- **`Auto Save Config = ON`** — every widget change is auto-saved immediately. On next session, every saved value is restored.
+- **`Auto Save Config = OFF`** — no auto-saves on change. The previously saved file (if any) is still **read and applied** on next load — auto-save only controls *writing*. Use `Save Config Now` for a one-shot manual save.
+- **No file present** — defaults are used.
+
+### Restore order
+
+1. Window size and position are applied before the open animation, so the window opens at exactly the size/position you last left it.
+2. Built-in Settings widgets restore from the file.
+3. User-created widgets check the restoration queue in their constructor and apply their saved value as they're created.
+
+### Manual control
+
+```lua
+GuiLibrary:SaveConfig(window, true)   -- force-save right now (ignores auto-save flag)
+GuiLibrary.LoadConfig(window)          -- read file and apply (note: dot, not colon)
+GuiLibrary:TestFileSaving()           -- quick check: does this executor support file I/O?
+```
+
+> ⚠ **Important:** `LoadConfig` is a plain function (no implicit `self`). Always call it as `GuiLibrary.LoadConfig(window)` with a **dot**. Calling it with `:` will pass the wrong argument and silently break restoration.
 
 ---
 
@@ -268,31 +323,89 @@ Every window gets a Settings tab automatically, accessible via ⚙️.
 | Forest | Dark green palette |
 | Ocean | Dark teal/blue palette |
 
-Switch programmatically (also saves if auto-save is on):
+Themes are applied to **every** UI element, including dropdown popups and color picker chrome. Switch via Settings → Theme.
+
+---
+
+## Debug Output
+
+Set this any time after loading the library to see save/load activity, restoration steps, and component creation in the output window:
 
 ```lua
--- done automatically when the Theme dropdown in Settings changes
+local GuiLibrary = loadstring(game:HttpGet("..."))()
+GuiLibrary.debugPrints = true
 ```
+
+Off by default.
 
 ---
 
 ## API Reference
 
-### `GuiLibrary:CreateWindow(title, size)` → window
-### `GuiLibrary:CreateTab(window, name)` → tab
-### `GuiLibrary:CreateButton(tab, text, callback)` → button
-### `GuiLibrary:CreateToggle(tab, text, default, callback)` → `{ GetValue, SetValue, Frame }`
-### `GuiLibrary:CreateSlider(tab, text, min, max, default, callback)` → `{ GetValue, SetValue, Frame }`
-### `GuiLibrary:CreateDropdown(tab, text, options, callback)` → `{ GetValue, SetValue, UpdateOptions, Frame }`
-### `GuiLibrary:CreateLabel(tab, text)` → label
-### `GuiLibrary:CreateSection(tab, title)` → frame
-### `GuiLibrary:CreateInput(tab, placeholder, callback)` → `{ GetValue, TextBox, Frame }`
-### `GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)` → `{ GetValue, SetColor, Frame }`
-### `GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)` → `{ GetKey, SetKey, Frame }`
-### `GuiLibrary:CreateNotification(title, message, duration, type)`
-### `GuiLibrary:SaveConfig(window, force)`
-### `GuiLibrary:LoadConfig(window)` → boolean
-### `GuiLibrary:TestFileSaving()` → boolean
+### Window
+```lua
+GuiLibrary:CreateWindow(title, size, iconAsset)  -- → window
+window.Show()
+window.Hide()
+window.Toggle()
+window.SwitchTab(name)
+window.SetTitle(text)
+window.SetIcon(asset)
+```
+
+### Tabs
+```lua
+GuiLibrary:CreateTab(window, name)               -- → tab
+```
+
+### Components
+```lua
+GuiLibrary:CreateButton(tab, text, callback)
+GuiLibrary:CreateToggle(tab, text, default, callback)         -- → { GetValue, SetValue, Frame }
+GuiLibrary:CreateSlider(tab, text, min, max, default, callback) -- → { GetValue, SetValue, Frame }
+GuiLibrary:CreateDropdown(tab, text, options, callback)       -- → { GetValue, SetValue, UpdateOptions, Frame }
+GuiLibrary:CreateLabel(tab, text)
+GuiLibrary:CreateSection(tab, title)
+GuiLibrary:CreateInput(tab, placeholder, callback)            -- → { GetValue, TextBox, Frame }
+GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback) -- → { GetValue, SetColor, Frame }
+GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)     -- → { GetKey, SetKey, Frame }
+GuiLibrary:CreateNotification(title, message, duration, type)
+```
+
+### Config
+```lua
+GuiLibrary:SaveConfig(window, force)
+GuiLibrary.LoadConfig(window)         -- (call with dot, not colon)
+GuiLibrary:TestFileSaving()           -- → boolean
+```
+
+### Globals
+```lua
+GuiLibrary.debugPrints           -- boolean, default false
+GuiLibrary.NotificationsEnabled  -- boolean, default true
+GuiLibrary.NotificationDuration  -- number (seconds), default 3
+GuiLibrary.CurrentWindow         -- the most recently created window
+```
+
+---
+
+## Changelog
+
+### 2.1.0
+- **Auto-save fully overhauled** — saves now include window position, size, theme, animations, FPS visibility, notification preferences, lock position, and the auto-save flag itself.
+- **Restoration decoupled from auto-save flag** — if a save file exists, settings are restored regardless of whether auto-save is currently on.
+- Added window icons and `SetIcon` / `SetTitle`.
+- Added tab slide animations and horizontal tab bar scrolling.
+- Added stacked notifications with reflow on dismiss.
+- Added Settings: Notifications toggle, Lock Window Position, Notification Duration, Center Window, Reset Window Size, Clear Save File.
+- Removed UI Scale slider (use the bottom-right resize grip).
+- Fixed dragging (was offset by GuiInset).
+- Fixed color picker swatch being hidden under its own popup.
+- Fixed slider value occasionally reverting to default after reload (saves now coalesce to drag-end).
+- Fixed themes not applying to dropdown popups.
+
+### 2.0.0
+- Initial public release.
 
 ---
 
