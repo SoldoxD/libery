@@ -1,4 +1,4 @@
--- Made by Soldo / Discord: cyber_modz
+-- Made by Soldo / Discord: cyber_modz --
 
 local GuiLibrary = {}
 local TweenService    = game:GetService("TweenService")
@@ -279,16 +279,35 @@ local function loadConfig(window)
     restorationQueue={}
     for _,entry in ipairs(config.Components or {}) do restorationQueue[entry.ID]=entry.Data end
     dprint("loadConfig: restorationQueue populated with "..(config.Components and #config.Components or 0).." entries")
+    -- DIAGNOSTIC: show what's in the queue vs what we'll iterate
+    do
+        local keys = {}
+        for k in pairs(restorationQueue) do table.insert(keys, k) end
+        dprint("loadConfig: queue keys = ["..table.concat(keys, ", ").."]")
+        for tn, tab in pairs(window.Tabs or {}) do
+            dprint("loadConfig: tab '"..tostring(tn).."' has "..#(tab.Elements or {}).." elements")
+        end
+    end
+
     local restoredCount = 0
     for _,tab in pairs(window.Tabs or {}) do
         for _,el in ipairs(tab.Elements or {}) do
             local id=el:GetAttribute("ElementID")
+            local hasQueue = id and restorationQueue[id]~=nil
+            dprint("  iter el name='"..tostring(el.Name).."' id='"..tostring(id).."' inQueue="..tostring(hasQueue))
             if id and restorationQueue[id] then
                 local setter=elementSetters[el]
                 local val=restorationQueue[id].Value
                 if setter and val~=nil then
-                    local ok = pcall(setter, val, false)
-                    if ok then restoredCount = restoredCount + 1; dprint("  ✓ restored "..id.." = "..tostring(val)) end
+                    local ok, err = pcall(setter, val, false)
+                    if ok then
+                        restoredCount = restoredCount + 1
+                        dprint("    ✓ restored "..id.." = "..tostring(val))
+                    else
+                        dprint("    ✗ setter errored: "..tostring(err))
+                    end
+                else
+                    dprint("    ✗ no setter or val is nil (setter="..tostring(setter)..", val="..tostring(val)..")")
                 end
                 restorationQueue[id]=nil
             end
