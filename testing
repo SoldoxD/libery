@@ -246,9 +246,7 @@ local function loadConfig(window)
                     local setter=elementSetters[el]
                     local val=restorationQueue[id].Value
                     if setter and val~=nil then
-                        setter(val,false)
-                        local cb=elementCallbacks[el]
-                        if cb then pcall(cb, val) end
+                        pcall(setter, val, false)  -- setter handles callback invocation internally
                     end
                     restorationQueue[id]=nil
                 end
@@ -368,8 +366,11 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
         saveConfig(nil,true)
     end)
 
-    elementSetters[f]=setState
-    elementCallbacks[f]=callback
+    elementSetters[f]=function(v)
+        setState(v)
+        -- Fire user callback so side-effects (e.g. autoSaveEnabled assignment, FPS visibility) re-apply on restore
+        if callback then pcall(callback, v) end
+    end
     if restorationQueue[eid] and restorationQueue[eid].Type=="Toggle" then
         local sv=restorationQueue[eid].Value; setState(sv)
         if callback then pcall(callback, sv) end; restorationQueue[eid]=nil
@@ -872,16 +873,39 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     return {Frame=f, GetKey=function() return curKey end, SetKey=setKeybind}
 end
 
+-- ==================== NOTIFICATIONS (stacked) ====================
+
+GuiLibrary.NotificationsEnabled = true
+GuiLibrary.NotificationDuration = 3
+
+local activeNotifs = {}
+local NOTIF_HEIGHT = 76
+local NOTIF_GAP    = 10
+local NOTIF_TOP    = 60
+
+local function reflowNotifs()
+    for i, entry in ipairs(activeNotifs) do
+        if entry.Frame and entry.Frame.Parent then
+            local y = NOTIF_TOP + (i-1) * (NOTIF_HEIGHT + NOTIF_GAP)
+            entry.TargetY = y
+            createTween(entry.Frame, {Position=UDim2.new(1,-310,0,y)}, 0.25)
+        end
+    end
+end
+
 function GuiLibrary:CreateNotification(title, message, duration, notifType)
-    duration=duration or 3; notifType=notifType or "info"
+    if GuiLibrary.NotificationsEnabled==false then return end
+    duration=duration or GuiLibrary.NotificationDuration or 3
+    notifType=notifType or "info"
     local tColors={info=COLORS.ACCENT,success=COLORS.SUCCESS,warning=COLORS.WARNING,error=COLORS.DANGER}
     local tIcons ={info="i",success="✓",warning="!",error="x"}
     local nc=tColors[notifType] or COLORS.ACCENT
 
-    local sg=Instance.new("ScreenGui"); sg.Name="NotificationGui"; sg.Parent=game.CoreGui
+    local sg=Instance.new("ScreenGui"); sg.Name="NotificationGui"
+    sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=game.CoreGui
 
-    local nf=Instance.new("Frame"); nf.Size=UDim2.new(0,300,0,76)
-    nf.Position=UDim2.new(1,20,0,60); nf.BackgroundColor3=COLORS.PRIMARY
+    local nf=Instance.new("Frame"); nf.Size=UDim2.new(0,300,0,NOTIF_HEIGHT)
+    nf.BackgroundColor3=COLORS.PRIMARY
     nf.BorderSizePixel=0; nf.Parent=sg; createCorner(nf,10); createStroke(nf,1,COLORS.BORDER)
 
     local bar=Instance.new("Frame"); bar.Size=UDim2.new(0,4,1,-20); bar.Position=UDim2.new(0,0,0,10)
@@ -905,16 +929,27 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
     local pf=Instance.new("Frame"); pf.Size=UDim2.new(1,0,1,0); pf.BackgroundColor3=nc
     pf.BorderSizePixel=0; pf.Parent=pbg; createCorner(pf,1)
 
+    -- compute slot
+    local slotY = NOTIF_TOP + (#activeNotifs) * (NOTIF_HEIGHT + NOTIF_GAP)
+    local entry = {Frame=nf, ScreenGui=sg, TargetY=slotY}
+    table.insert(activeNotifs, entry)
+
+    nf.Position = UDim2.new(1, 20, 0, slotY)
+
     task.spawn(function()
-        -- Bounce entrance with Back easing
         local inInfo=TweenInfo.new(0.45,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
-        TweenService:Create(nf,inInfo,{Position=UDim2.new(1,-310,0,60)}):Play()
-        -- Progress bar drain
+        TweenService:Create(nf,inInfo,{Position=UDim2.new(1,-310,0,slotY)}):Play()
         local drainInfo=TweenInfo.new(duration,Enum.EasingStyle.Linear,Enum.EasingDirection.Out)
         TweenService:Create(pf,drainInfo,{Size=UDim2.new(0,0,1,0)}):Play()
         task.wait(duration)
-        createTween(nf,{Position=UDim2.new(1,20,0,60),BackgroundTransparency=1},0.3)
-        task.wait(0.35); sg:Destroy()
+        local outY = entry.TargetY or slotY
+        createTween(nf,{Position=UDim2.new(1,20,0,outY),BackgroundTransparency=1},0.3)
+        task.wait(0.35)
+        sg:Destroy()
+        for i,e in ipairs(activeNotifs) do
+            if e==entry then table.remove(activeNotifs,i); break end
+        end
+        reflowNotifs()
     end)
 end
 
@@ -935,29 +970,66 @@ function GuiLibrary:CreateSettingsTab(window)
 
     GuiLibrary:CreateSection(settingsTab,"Library by cyber_modz")
     GuiLibrary:CreateKeybind(settingsTab,"Toggle GUI",Enum.KeyCode.Insert,function() window.Toggle() end)
-    GuiLibrary:CreateSlider(settingsTab,"UI Scale",0.5,2.0,1.0,function(v)
-        if isInitializing then return end  -- size is restored separately, don't override
-        local ns=UDim2.new(0,600*v,0,400*v); window.CurrentSize=ns
-        createTween(window.MainFrame,{Size=ns},0.2); saveConfig(nil,true)
-    end)
     GuiLibrary:CreateDropdown(settingsTab,"Theme",{"Dark","Light","Midnight","Forest","Ocean"},function(t)
-        for k,c in pairs(themes[t]) do COLORS[k]=c end; updateElementColors(window); saveConfig(nil,true)
+        if not themes[t] then return end
+        for k,c in pairs(themes[t]) do COLORS[k]=c end; updateElementColors(window)
+        if not isInitializing then saveConfig(nil,true) end
     end)
+
     GuiLibrary:CreateSection(settingsTab,"Preferences")
     GuiLibrary:CreateToggle(settingsTab,"Auto Save Config",autoSaveEnabled,function(state)
         autoSaveEnabled=state
-        if isInitializing then return end
-        if state then saveConfig(nil,true); GuiLibrary:CreateNotification("Auto Save","Saves automatically",3,"success")
-        else GuiLibrary:CreateNotification("Auto Save","Disabled",2,"info") end
+        -- Always force-save the AutoSaveEnabled state (even if isInitializing handler is running on user toggle)
+        if not isInitializing then
+            saveConfig(nil,true)
+            if state then GuiLibrary:CreateNotification("Auto Save","Saves automatically",3,"success")
+            else GuiLibrary:CreateNotification("Auto Save","Disabled",2,"info") end
+        end
     end)
-    GuiLibrary:CreateToggle(settingsTab,"Enable Animations",true,function(state) ANIM_TIME=state and 0.25 or 0.01; saveConfig(nil,true) end)
-    GuiLibrary:CreateToggle(settingsTab,"Show FPS",false,function(state) if window.FPSLabel then window.FPSLabel.Visible=state end; saveConfig(nil,true) end)
+    GuiLibrary:CreateToggle(settingsTab,"Enable Animations",true,function(state)
+        ANIM_TIME=state and 0.25 or 0.01
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+    GuiLibrary:CreateToggle(settingsTab,"Show FPS",false,function(state)
+        if window.FPSLabel then window.FPSLabel.Visible=state end
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+    GuiLibrary:CreateToggle(settingsTab,"Notifications",true,function(state)
+        GuiLibrary.NotificationsEnabled=state
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+    GuiLibrary:CreateToggle(settingsTab,"Lock Window Position",false,function(state)
+        window.LockPosition=state
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+    GuiLibrary:CreateSlider(settingsTab,"Notification Duration",1,10,3,function(v)
+        GuiLibrary.NotificationDuration=v
+    end)
+
+    GuiLibrary:CreateSection(settingsTab,"Window")
+    GuiLibrary:CreateButton(settingsTab,"Center Window",function()
+        local vp=workspace.CurrentCamera.ViewportSize
+        local sz=window.CurrentSize
+        local cx=math.max((vp.X-sz.X.Offset)/2,0); local cy=math.max((vp.Y-sz.Y.Offset)/2,0)
+        createTween(window.MainFrame,{Position=UDim2.new(0,cx,0,cy)},0.3)
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+    GuiLibrary:CreateButton(settingsTab,"Reset Window Size",function()
+        local def=UDim2.new(0,600,0,400)
+        window.CurrentSize=def
+        createTween(window.MainFrame,{Size=def},0.3)
+        if not isInitializing then saveConfig(nil,true) end
+    end)
+
     GuiLibrary:CreateSection(settingsTab,"Actions")
-    GuiLibrary:CreateButton(settingsTab,"Save Config Now",function() saveConfig(nil,true); GuiLibrary:CreateNotification("Config","Saved!",2,"success") end)
+    GuiLibrary:CreateButton(settingsTab,"Save Config Now",function()
+        saveConfig(nil,true); GuiLibrary:CreateNotification("Config","Saved!",2,"success")
+    end)
     GuiLibrary:CreateButton(settingsTab,"Reset Settings",function()
         for k,c in pairs(themes["Dark"]) do COLORS[k]=c end
         window.MainFrame.Size=UDim2.new(0,600,0,400); window.CurrentSize=UDim2.new(0,600,0,400)
-        ANIM_TIME=0.25; autoSaveEnabled=false; updateElementColors(window); saveConfig(nil,true)
+        ANIM_TIME=0.25; autoSaveEnabled=false; updateElementColors(window)
+        saveConfig(nil,true)
         GuiLibrary:CreateNotification("Settings","Reset to defaults",2,"info")
     end)
 end
@@ -1055,8 +1127,14 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     contentFrame.Size=UDim2.new(1,-20,1,-60); contentFrame.Position=UDim2.new(0,10,0,52)
     contentFrame.BackgroundTransparency=1; contentFrame.Parent=mf
 
-    local tabsCont=Instance.new("Frame"); tabsCont.Name="TabsContainer"
-    tabsCont.Size=UDim2.new(1,0,0,34); tabsCont.BackgroundTransparency=1; tabsCont.Parent=contentFrame
+    -- Horizontally scrollable tabs container
+    local tabsCont=Instance.new("ScrollingFrame"); tabsCont.Name="TabsContainer"
+    tabsCont.Size=UDim2.new(1,0,0,34); tabsCont.BackgroundTransparency=1
+    tabsCont.BorderSizePixel=0
+    tabsCont.ScrollingDirection=Enum.ScrollingDirection.X
+    tabsCont.ScrollBarThickness=3; tabsCont.ScrollBarImageColor3=COLORS.ACCENT
+    tabsCont.CanvasSize=UDim2.new(0,0,1,0); tabsCont.AutomaticCanvasSize=Enum.AutomaticSize.X
+    tabsCont.Parent=contentFrame
     local tabsLayout=Instance.new("UIListLayout"); tabsLayout.FillDirection=Enum.FillDirection.Horizontal
     tabsLayout.SortOrder=Enum.SortOrder.LayoutOrder; tabsLayout.Padding=UDim.new(0,4); tabsLayout.Parent=tabsCont
 
@@ -1095,30 +1173,35 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     end); table.insert(activeInputConnections,fpsConn)
 
     -- ── Manual drag (title bar only) ──────────────────────────
+    -- Title bar drag — listen on the title bar itself for reliability
+    tb.Active=true; mf.Active=true
     local dragActive=false; local dragStart=Vector2.new(); local dragOrigPos=Vector2.new()
-    local titleDragConn=UserInputService.InputBegan:Connect(function(inp)
-        if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+
+    local function isOverButton(btn, m)
+        local bp=btn.AbsolutePosition; local bs=btn.AbsoluteSize
+        return m.X>=bp.X and m.X<=bp.X+bs.X and m.Y>=bp.Y and m.Y<=bp.Y+bs.Y
+    end
+
+    tb.InputBegan:Connect(function(inp)
+        if inp.UserInputType~=Enum.UserInputType.MouseButton1 and inp.UserInputType~=Enum.UserInputType.Touch then return end
         if not mf.Visible then return end
+        if window.LockPosition then return end
         local m=UserInputService:GetMouseLocation()
-        local tp=tb.AbsolutePosition; local ts=tb.AbsoluteSize
-        local overTitleBar=(m.X>=tp.X and m.X<=tp.X+ts.X and m.Y>=tp.Y and m.Y<=tp.Y+ts.Y)
-        -- don't drag when clicking buttons or resize handle
-        local function over(btn) local bp=btn.AbsolutePosition;local bs=btn.AbsoluteSize;return m.X>=bp.X and m.X<=bp.X+bs.X and m.Y>=bp.Y and m.Y<=bp.Y+bs.Y end
-        if overTitleBar and not over(settingsBtn) and not over(closeBtn) then
-            dragActive=true; dragStart=m
-            -- Use Position offsets directly (AbsolutePosition would offset by GuiInset)
-            dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
-        end
-    end); table.insert(activeInputConnections,titleDragConn)
+        if isOverButton(settingsBtn,m) or isOverButton(closeBtn,m) then return end
+        dragActive=true
+        dragStart=m
+        dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
+    end)
 
     local dragEndConn=UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragActive=false end
     end); table.insert(activeInputConnections,dragEndConn)
 
     local dragMoveConn=UserInputService.InputChanged:Connect(function(inp)
-        if dragActive and inp.UserInputType==Enum.UserInputType.MouseMovement then
-            local m=UserInputService:GetMouseLocation(); local d=m-dragStart
-            mf.Position=UDim2.new(0,dragOrigPos.X+d.X,0,dragOrigPos.Y+d.Y)
+        if dragActive and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
+            local m=UserInputService:GetMouseLocation()
+            local d=m-dragStart
+            mf.Position=UDim2.new(0, dragOrigPos.X+d.X, 0, dragOrigPos.Y+d.Y)
         end
     end); table.insert(activeInputConnections,dragMoveConn)
 
