@@ -187,7 +187,22 @@ local function saveConfig(window, force)
     end)
     if not ok then return end
 
-    local config = { UIScale=window.CurrentSize.X.Offset/600, SizeWidth=window.CurrentSize.X.Offset, SizeHeight=window.CurrentSize.Y.Offset, AnimationsEnabled=(ANIM_TIME>0.05), AutoSaveEnabled=autoSaveEnabled, Theme=nil, Components={} }
+    local mfPos = window.MainFrame and window.MainFrame.Position or UDim2.new(0,0,0,0)
+    local config = {
+        UIScale            = window.CurrentSize.X.Offset/600,
+        SizeWidth          = window.CurrentSize.X.Offset,
+        SizeHeight         = window.CurrentSize.Y.Offset,
+        PosX               = mfPos.X.Offset,
+        PosY               = mfPos.Y.Offset,
+        AnimationsEnabled  = (ANIM_TIME>0.05),
+        AutoSaveEnabled    = autoSaveEnabled,
+        NotificationsEnabled = GuiLibrary.NotificationsEnabled,
+        NotificationDuration = GuiLibrary.NotificationDuration,
+        LockPosition       = window.LockPosition or false,
+        ShowFPS            = window.FPSLabel and window.FPSLabel.Visible or false,
+        Theme              = nil,
+        Components         = {},
+    }
 
     for name, theme in pairs(themes) do
         local match=true
@@ -228,6 +243,10 @@ local function loadConfig(window)
     if not rOk or not config then return false end
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
     if config.AutoSaveEnabled~=nil then autoSaveEnabled=config.AutoSaveEnabled==true end
+    if config.NotificationsEnabled~=nil then GuiLibrary.NotificationsEnabled=config.NotificationsEnabled==true end
+    if config.NotificationDuration then GuiLibrary.NotificationDuration=tonumber(config.NotificationDuration) or 3 end
+    if config.LockPosition~=nil then window.LockPosition=config.LockPosition==true end
+    if config.ShowFPS~=nil and window.FPSLabel then window.FPSLabel.Visible=config.ShowFPS==true end
     if config.Theme and themes[config.Theme] then for k,v in pairs(themes[config.Theme]) do COLORS[k]=v end end
     if config.SizeWidth and config.SizeHeight then
         local ns=UDim2.new(0,config.SizeWidth,0,config.SizeHeight)
@@ -235,6 +254,11 @@ local function loadConfig(window)
     elseif config.UIScale then
         local ns=UDim2.new(0,600*config.UIScale,0,400*config.UIScale)
         window.CurrentSize=ns; if window.MainFrame then window.MainFrame.Size=ns end
+    end
+    if config.PosX and config.PosY then
+        -- Stored for the open animation to apply after it completes (otherwise the tween overrides this)
+        window.SavedPosition = UDim2.new(0, config.PosX, 0, config.PosY)
+        if window.MainFrame then window.MainFrame.Position = window.SavedPosition end
     end
     restorationQueue={}
     if autoSaveEnabled then
@@ -1214,7 +1238,12 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     end)
 
     local dragEndConn=UserInputService.InputEnded:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragActive=false end
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+            if dragActive then
+                dragActive=false
+                if not isInitializing then saveConfig(nil,false) end
+            end
+        end
     end); table.insert(activeInputConnections,dragEndConn)
 
     local dragMoveConn=UserInputService.InputChanged:Connect(function(inp)
@@ -1321,25 +1350,35 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     closeBtn.MouseEnter:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.1}) end)
     closeBtn.MouseLeave:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.55}) end)
 
-    -- ── Initial open animation ─────────────────────────────────
-    task.wait(1.5); loader:Destroy()
-    mf.Visible=true
-    local vp=workspace.CurrentCamera.ViewportSize
-    local cx=math.max((vp.X-size.X.Offset)/2,0); local cy=math.max((vp.Y-size.Y.Offset)/2,0)
-    mf.Size=UDim2.new(0,0,0,0)
-    mf.Position=UDim2.new(0,cx+size.X.Offset/2,0,cy+size.Y.Offset/2)
-    local openInfo=TweenInfo.new(0.55,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
-    TweenService:Create(mf,openInfo,{Size=size,Position=UDim2.new(0,cx,0,cy)}):Play()
-
+    -- ── Setup window functions before settings tab needs them ───
     window.Hide=hideWindow; window.Show=showWindow
     window.Toggle=function() if isVisible then hideWindow() else showWindow() end end
     window.SetIcon=setIcon
     window.SetTitle=function(t) titleLbl.Text=tostring(t or "") end
 
+    -- ── Settings tab + config load BEFORE open animation so we use the saved size/position ──
     isInitializing=true
     GuiLibrary:CreateSettingsTab(window)
     GuiLibrary:LoadConfig(window)
     isInitializing=false
+
+    -- ── Initial open animation ─────────────────────────────────
+    task.wait(1.5); loader:Destroy()
+    mf.Visible=true
+    local sz = window.CurrentSize or size
+    local vp = workspace.CurrentCamera.ViewportSize
+    local targetX, targetY
+    if window.SavedPosition then
+        targetX = window.SavedPosition.X.Offset
+        targetY = window.SavedPosition.Y.Offset
+    else
+        targetX = math.max((vp.X-sz.X.Offset)/2,0)
+        targetY = math.max((vp.Y-sz.Y.Offset)/2,0)
+    end
+    mf.Size=UDim2.new(0,0,0,0)
+    mf.Position=UDim2.new(0, targetX+sz.X.Offset/2, 0, targetY+sz.Y.Offset/2)
+    local openInfo=TweenInfo.new(0.55,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
+    TweenService:Create(mf,openInfo,{Size=sz, Position=UDim2.new(0,targetX,0,targetY)}):Play()
     updateElementColors(window)
     return window
 end
