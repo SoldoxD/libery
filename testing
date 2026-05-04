@@ -363,7 +363,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     sw.MouseButton1Click:Connect(function()
         setState(not isToggled)
         if callback then callback(isToggled) end
-        saveConfig(nil,true)
+        saveConfig(nil,false)
     end)
 
     elementSetters[f]=function(v)
@@ -420,7 +420,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         fill.Size=UDim2.new(curPct,0,1,0); handle.Position=UDim2.new(curPct,-9,0.5,-9)
         val.Text=string.format("%.1f",cur); f:SetAttribute("SliderValue",cur)
         if callback then callback(cur) end
-        if shouldSave and not isInitializing then saveConfig(nil,true) end
+        if shouldSave and not isInitializing then saveConfig(nil,false) end
     end
 
     handle.MouseButton1Down:Connect(function() dragging=true end)
@@ -435,7 +435,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 and dragging then
             dragging=false
             createTween(handle,{Size=UDim2.new(0,18,0,18),Position=UDim2.new(curPct,-9,0.5,-9)})
-            if not isInitializing then saveConfig(nil,true) end
+            if not isInitializing then saveConfig(nil,false) end
         end
     end); table.insert(activeInputConnections,endConn)
 
@@ -461,7 +461,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     else updateSlider(cur,false) end
 
     table.insert(tab.Elements,f)
-    return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,true) end}
+    return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,false); if not isInitializing then saveConfig(nil,false) end end}
 end
 
 -- FIX: Dropdown uses a floating list parented to mainFrame (not the scrolling tab content)
@@ -535,7 +535,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
             ob.MouseButton1Click:Connect(function()
                 curSel=opt; dropLbl.Text=text..":  "..opt; dropFrame:SetAttribute("DropdownValue",opt)
                 closeInstant()
-                if callback then callback(opt) end; saveConfig(nil,true)
+                if callback then callback(opt) end; saveConfig(nil,false)
             end)
             ob.MouseEnter:Connect(function() createTween(ob,{BackgroundTransparency=0.82}); createTween(ol,{TextColor3=COLORS.TEXT}) end)
             ob.MouseLeave:Connect(function() createTween(ob,{BackgroundTransparency=1}); createTween(ol,{TextColor3=COLORS.TEXT_MUTED}) end)
@@ -586,7 +586,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
 
     dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Dropdown")
     dropFrame:SetAttribute("WidgetType","Dropdown"); dropFrame:SetAttribute("DropdownValue",curSel)
-    elementSetters[dropFrame]=function(v) setVal(v); if not isInitializing then saveConfig(nil,true) end end
+    elementSetters[dropFrame]=function(v) setVal(v); if not isInitializing then saveConfig(nil,false) end end
     elementCallbacks[dropFrame]=callback
 
     dropFrame.AncestryChanged:Connect(function()
@@ -640,7 +640,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
 
     box.FocusLost:Connect(function(enter)
         f:SetAttribute("InputValue",box.Text)
-        if callback and enter then callback(box.Text) end; saveConfig(nil,true)
+        if callback and enter then callback(box.Text) end; saveConfig(nil,false)
     end)
     box.Focused:Connect(function() createStroke(box,1.5,COLORS.ACCENT) end)
     box.FocusLost:Connect(function() local s=box:FindFirstChildWhichIsA("UIStroke"); if s then s:Destroy() end end)
@@ -650,7 +650,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
 
     local function setInput(v)
         if type(v)=="string" then box.Text=v; f:SetAttribute("InputValue",v)
-            if callback then callback(v) end; if not isInitializing then saveConfig(nil,true) end end
+            if callback then callback(v) end; if not isInitializing then saveConfig(nil,false) end end
     end
     elementSetters[f]=setInput
     elementCallbacks[f]=callback
@@ -760,7 +760,7 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
         swatch.BackgroundColor3=curColor; cf:SetAttribute("ColorValue",curColor)
         svF.BackgroundColor3=Color3.fromHSV(hue,1,1); updateMarkers()
         if callback then callback(curColor) end
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end
     local function setColor(inp)
         local c=nil
@@ -852,7 +852,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
             if inp.UserInputType==Enum.UserInputType.Keyboard then
                 curKey=inp.KeyCode; kbBtn.Text=inp.KeyCode.Name; f:SetAttribute("KeybindValue",inp.KeyCode.Name)
                 listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
-                if conn then conn:Disconnect() end; saveConfig(nil,true)
+                if conn then conn:Disconnect() end; saveConfig(nil,false)
             end
         end)
     end)
@@ -864,7 +864,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
 
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Keybind")
     f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",curKey and curKey.Name or "None")
-    elementSetters[f]=function(v) if setKeybind(v) and not isInitializing then saveConfig(nil,true) end end
+    elementSetters[f]=function(v) if setKeybind(v) and not isInitializing then saveConfig(nil,false) end end
     local eid=f:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="Keybind" then
         if setKeybind(restorationQueue[eid].Value) then restorationQueue[eid]=nil end
@@ -981,7 +981,7 @@ function GuiLibrary:CreateSettingsTab(window)
     GuiLibrary:CreateDropdown(settingsTab,"Theme",{"Dark","Light","Midnight","Forest","Ocean"},function(t)
         if not themes[t] then return end
         for k,c in pairs(themes[t]) do COLORS[k]=c end; updateElementColors(window)
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
 
     GuiLibrary:CreateSection(settingsTab,"Preferences")
@@ -996,19 +996,19 @@ function GuiLibrary:CreateSettingsTab(window)
     end)
     GuiLibrary:CreateToggle(settingsTab,"Enable Animations",true,function(state)
         ANIM_TIME=state and 0.25 or 0.01
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
     GuiLibrary:CreateToggle(settingsTab,"Show FPS",false,function(state)
         if window.FPSLabel then window.FPSLabel.Visible=state end
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
     GuiLibrary:CreateToggle(settingsTab,"Notifications",true,function(state)
         GuiLibrary.NotificationsEnabled=state
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
     GuiLibrary:CreateToggle(settingsTab,"Lock Window Position",false,function(state)
         window.LockPosition=state
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
     GuiLibrary:CreateSlider(settingsTab,"Notification Duration",1,10,3,function(v)
         GuiLibrary.NotificationDuration=v
@@ -1020,13 +1020,13 @@ function GuiLibrary:CreateSettingsTab(window)
         local sz=window.CurrentSize
         local cx=math.max((vp.X-sz.X.Offset)/2,0); local cy=math.max((vp.Y-sz.Y.Offset)/2,0)
         createTween(window.MainFrame,{Position=UDim2.new(0,cx,0,cy)},0.3)
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
     GuiLibrary:CreateButton(settingsTab,"Reset Window Size",function()
         local def=UDim2.new(0,600,0,400)
         window.CurrentSize=def
         createTween(window.MainFrame,{Size=def},0.3)
-        if not isInitializing then saveConfig(nil,true) end
+        if not isInitializing then saveConfig(nil,false) end
     end)
 
     GuiLibrary:CreateSection(settingsTab,"Actions")
@@ -1238,7 +1238,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
 
     local resEndConn=UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 and resizing then
-            resizing=false; window.CurrentSize=mf.Size; saveConfig(nil,true)
+            resizing=false; window.CurrentSize=mf.Size; saveConfig(nil,false)
         end
     end); table.insert(activeInputConnections,resEndConn)
 
