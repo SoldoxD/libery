@@ -260,20 +260,20 @@ local function loadConfig(window)
         window.SavedPosition = UDim2.new(0, config.PosX, 0, config.PosY)
         if window.MainFrame then window.MainFrame.Position = window.SavedPosition end
     end
+    -- Restoration always happens if the config file exists, regardless of autoSaveEnabled.
+    -- autoSaveEnabled only controls whether changes are auto-saved on user interaction.
     restorationQueue={}
-    if autoSaveEnabled then
-        for _,entry in ipairs(config.Components or {}) do restorationQueue[entry.ID]=entry.Data end
-        for _,tab in pairs(window.Tabs or {}) do
-            for _,el in ipairs(tab.Elements or {}) do
-                local id=el:GetAttribute("ElementID")
-                if id and restorationQueue[id] then
-                    local setter=elementSetters[el]
-                    local val=restorationQueue[id].Value
-                    if setter and val~=nil then
-                        pcall(setter, val, false)  -- setter handles callback invocation internally
-                    end
-                    restorationQueue[id]=nil
+    for _,entry in ipairs(config.Components or {}) do restorationQueue[entry.ID]=entry.Data end
+    for _,tab in pairs(window.Tabs or {}) do
+        for _,el in ipairs(tab.Elements or {}) do
+            local id=el:GetAttribute("ElementID")
+            if id and restorationQueue[id] then
+                local setter=elementSetters[el]
+                local val=restorationQueue[id].Value
+                if setter and val~=nil then
+                    pcall(setter, val, false)  -- setter handles callback invocation internally
                 end
+                restorationQueue[id]=nil
             end
         end
     end
@@ -287,9 +287,8 @@ local function loadConfig(window)
     updateElementColors(window,true)
     -- Defer notification so it doesn't fire during the loader
     task.delay(2, function()
-        if autoSaveEnabled then
-            GuiLibrary:CreateNotification("Config Loaded", "Auto-save ON, settings restored.", 3, "success")
-        end
+        local msg = autoSaveEnabled and "Settings restored. Auto-save ON." or "Settings restored. Auto-save OFF."
+        GuiLibrary:CreateNotification("Config Loaded", msg, 3, "success")
     end)
     return true
 end
