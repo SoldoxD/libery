@@ -38,6 +38,8 @@ local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
 local autoSaveEnabled    = false
 local currentPlaceId     = tostring(game.PlaceId)
 local elementSetters     = {}
+local elementCallbacks   = {}      -- maps frame -> user callback (for restore-time invocation)
+local dropdownLists      = {}      -- maps dropdown frame -> floating list (for theme recolor)
 local restorationQueue   = {}
 local isInitializing     = false
 local activeInputConnections = {}
@@ -141,6 +143,19 @@ local function updateElementColors(window, instant)
                         local arrow = btn:FindFirstChild("DropdownArrow")
                         if arrow then apply(arrow,{TextColor3=COLORS.TEXT_MUTED}) end
                     end
+                    local dl = dropdownLists[el]
+                    if dl then
+                        apply(dl,{BackgroundColor3=COLORS.PRIMARY,ScrollBarImageColor3=COLORS.ACCENT})
+                        local ds = dl:FindFirstChildWhichIsA("UIStroke")
+                        if ds then apply(ds,{Color=COLORS.BORDER}) end
+                        for _,ob in ipairs(dl:GetChildren()) do
+                            if ob:IsA("TextButton") then
+                                apply(ob,{BackgroundColor3=COLORS.ACCENT})
+                                local olbl=ob:FindFirstChildWhichIsA("TextLabel")
+                                if olbl then apply(olbl,{TextColor3=COLORS.TEXT_MUTED}) end
+                            end
+                        end
+                    end
                 elseif n:match("Input") then
                     apply(el,{BackgroundColor3=COLORS.HOVER})
                     local box = el:FindFirstChildWhichIsA("TextBox")
@@ -172,7 +187,7 @@ local function saveConfig(window, force)
     end)
     if not ok then return end
 
-    local config = { UIScale=window.CurrentSize.X.Offset/600, AnimationsEnabled=(ANIM_TIME>0.05), AutoSaveEnabled=autoSaveEnabled, Theme=nil, Components={} }
+    local config = { UIScale=window.CurrentSize.X.Offset/600, SizeWidth=window.CurrentSize.X.Offset, SizeHeight=window.CurrentSize.Y.Offset, AnimationsEnabled=(ANIM_TIME>0.05), AutoSaveEnabled=autoSaveEnabled, Theme=nil, Components={} }
 
     for name, theme in pairs(themes) do
         local match=true
@@ -214,7 +229,10 @@ local function loadConfig(window)
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
     if config.AutoSaveEnabled~=nil then autoSaveEnabled=config.AutoSaveEnabled==true end
     if config.Theme and themes[config.Theme] then for k,v in pairs(themes[config.Theme]) do COLORS[k]=v end end
-    if config.UIScale then
+    if config.SizeWidth and config.SizeHeight then
+        local ns=UDim2.new(0,config.SizeWidth,0,config.SizeHeight)
+        window.CurrentSize=ns; if window.MainFrame then window.MainFrame.Size=ns end
+    elseif config.UIScale then
         local ns=UDim2.new(0,600*config.UIScale,0,400*config.UIScale)
         window.CurrentSize=ns; if window.MainFrame then window.MainFrame.Size=ns end
     end
@@ -226,7 +244,12 @@ local function loadConfig(window)
                 local id=el:GetAttribute("ElementID")
                 if id and restorationQueue[id] then
                     local setter=elementSetters[el]
-                    if setter and restorationQueue[id].Value~=nil then setter(restorationQueue[id].Value,false) end
+                    local val=restorationQueue[id].Value
+                    if setter and val~=nil then
+                        setter(val,false)
+                        local cb=elementCallbacks[el]
+                        if cb then pcall(cb, val) end
+                    end
                     restorationQueue[id]=nil
                 end
             end
@@ -346,9 +369,10 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     end)
 
     elementSetters[f]=setState
+    elementCallbacks[f]=callback
     if restorationQueue[eid] and restorationQueue[eid].Type=="Toggle" then
         local sv=restorationQueue[eid].Value; setState(sv)
-        if callback then callback(sv) end; restorationQueue[eid]=nil
+        if callback then pcall(callback, sv) end; restorationQueue[eid]=nil
     end
     table.insert(tab.Elements,f)
     return {Frame=f, GetValue=function() return isToggled end, SetValue=setState}
@@ -390,7 +414,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local dragging=false; local curPct=0
 
     local function updateSlider(v, shouldSave)
-        shouldSave = shouldSave==nil and true or shouldSave
+        if shouldSave==nil then shouldSave=false end
         cur=math.clamp(v,min,max); curPct=(cur-min)/(max-min)
         fill.Size=UDim2.new(curPct,0,1,0); handle.Position=UDim2.new(curPct,-9,0.5,-9)
         val.Text=string.format("%.1f",cur); f:SetAttribute("SliderValue",cur)
@@ -410,6 +434,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 and dragging then
             dragging=false
             createTween(handle,{Size=UDim2.new(0,18,0,18),Position=UDim2.new(curPct,-9,0.5,-9)})
+            if not isInitializing then saveConfig(nil,true) end
         end
     end); table.insert(activeInputConnections,endConn)
 
@@ -428,13 +453,14 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     end)
 
     elementSetters[f]=updateSlider
+    elementCallbacks[f]=callback
     if restorationQueue[eid] and restorationQueue[eid].Type=="Slider" then
         local sv=tonumber(restorationQueue[eid].Value)
         updateSlider(sv~=nil and sv or cur,false); restorationQueue[eid]=nil
     else updateSlider(cur,false) end
 
     table.insert(tab.Elements,f)
-    return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,false) end}
+    return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,true) end}
 end
 
 -- FIX: Dropdown uses a floating list parented to mainFrame (not the scrolling tab content)
@@ -470,6 +496,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     dropList.Visible=false; dropList.ZIndex=600; dropList.ScrollBarThickness=4
     dropList.ScrollBarImageColor3=COLORS.ACCENT; dropList.BorderSizePixel=0
     dropList.Parent=mf or tab.Content; createCorner(dropList,8); createStroke(dropList,1,COLORS.BORDER)
+    dropdownLists[dropFrame]=dropList
 
     local listLayout=Instance.new("UIListLayout"); listLayout.SortOrder=Enum.SortOrder.LayoutOrder; listLayout.Parent=dropList
     local listPad=Instance.new("UIPadding"); listPad.PaddingTop=UDim.new(0,4); listPad.PaddingBottom=UDim.new(0,4)
@@ -558,7 +585,12 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
 
     dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Dropdown")
     dropFrame:SetAttribute("WidgetType","Dropdown"); dropFrame:SetAttribute("DropdownValue",curSel)
-    elementSetters[dropFrame]=setVal
+    elementSetters[dropFrame]=function(v) setVal(v); if not isInitializing then saveConfig(nil,true) end end
+    elementCallbacks[dropFrame]=callback
+
+    dropFrame.AncestryChanged:Connect(function()
+        if not dropFrame:IsDescendantOf(game) then dropdownLists[dropFrame]=nil end
+    end)
 
     local eid=dropFrame:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="Dropdown" then
@@ -620,6 +652,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
             if callback then callback(v) end; if not isInitializing then saveConfig(nil,true) end end
     end
     elementSetters[f]=setInput
+    elementCallbacks[f]=callback
     local eid=f:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="Input" then setInput(restorationQueue[eid].Value); restorationQueue[eid]=nil end
     table.insert(tab.Elements,f)
@@ -638,8 +671,9 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     createCorner(cf,8); createStroke(cf,1,COLORS.BORDER)
 
     local swatch=Instance.new("TextButton"); swatch.Size=UDim2.new(0,34,0,34)
-    swatch.Position=UDim2.new(0,8,0.5,-17); swatch.BackgroundColor3=defaultColor or Color3.new(1,1,1)
-    swatch.Text=""; swatch.BorderSizePixel=0; swatch.AutoButtonColor=false; swatch.Parent=cf
+    swatch.Position=UDim2.new(0,8,0,8); swatch.BackgroundColor3=defaultColor or Color3.new(1,1,1)
+    swatch.Text=""; swatch.BorderSizePixel=0; swatch.AutoButtonColor=false
+    swatch.ZIndex=210; swatch.Parent=cf
     createCorner(swatch,8); createStroke(swatch,1.5,COLORS.BORDER)
 
     local clbl=Instance.new("TextLabel"); clbl.Size=UDim2.new(0.5,0,0,20)
@@ -753,20 +787,32 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     end
     rBox.FocusLost:Connect(onRGB); gBox.FocusLost:Connect(onRGB); bBox.FocusLost:Connect(onRGB)
 
-    swatch.MouseButton1Click:Connect(function()
-        popOpen=not popOpen
+    local function setPopOpen(state)
+        popOpen=state
         if popOpen then
-            createTween(cf,{Size=UDim2.new(1,0,0,baseH+4+popup.AbsoluteSize.Y)})
             popup.Visible=true
+            createTween(cf,{Size=UDim2.new(1,0,0,baseH+4+popup.Size.Y.Offset)})
         else
             createTween(cf,{Size=UDim2.new(1,0,0,baseH)})
-            popup.Visible=false
+            task.delay(ANIM_TIME, function() if not popOpen then popup.Visible=false end end)
         end
-    end)
+    end
+    swatch.MouseButton1Click:Connect(function() setPopOpen(not popOpen) end)
+
+    -- Close button on popup
+    local closePop=Instance.new("TextButton"); closePop.Size=UDim2.new(0,22,0,22)
+    closePop.Position=UDim2.new(1,-28,0,6); closePop.BackgroundColor3=COLORS.DANGER
+    closePop.BackgroundTransparency=0.4; closePop.Text="X"; closePop.TextColor3=Color3.new(1,1,1)
+    closePop.TextSize=12; closePop.Font=Enum.Font.GothamBold; closePop.BorderSizePixel=0
+    closePop.AutoButtonColor=false; closePop.ZIndex=215; closePop.Parent=popup; createCorner(closePop,6)
+    closePop.MouseButton1Click:Connect(function() setPopOpen(false) end)
+    closePop.MouseEnter:Connect(function() createTween(closePop,{BackgroundTransparency=0}) end)
+    closePop.MouseLeave:Connect(function() createTween(closePop,{BackgroundTransparency=0.4}) end)
 
     cf:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_ColorPicker")
     cf:SetAttribute("WidgetType","ColorPicker"); cf:SetAttribute("ColorValue",curColor)
     elementSetters[cf]=setColor
+    elementCallbacks[cf]=callback
     local eid=cf:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="ColorPicker" then
         if setColor(restorationQueue[eid].Value) then restorationQueue[eid]=nil end
@@ -884,12 +930,13 @@ function GuiLibrary:CreateSettingsTab(window)
     local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,8); cl.Parent=tabContent
     local cp=Instance.new("UIPadding"); cp.PaddingTop=UDim.new(0,12); cp.PaddingLeft=UDim.new(0,12); cp.PaddingRight=UDim.new(0,12); cp.PaddingBottom=UDim.new(0,12); cp.Parent=tabContent
 
-    local settingsTab={Button=nil,Content=tabContent,Name="Settings",Elements={}}
+    local settingsTab={Button=nil,Content=tabContent,Name="Settings",Elements={},Order=999}
     window.Tabs["Settings"]=settingsTab
 
     GuiLibrary:CreateSection(settingsTab,"Library by cyber_modz")
     GuiLibrary:CreateKeybind(settingsTab,"Toggle GUI",Enum.KeyCode.Insert,function() window.Toggle() end)
     GuiLibrary:CreateSlider(settingsTab,"UI Scale",0.5,2.0,1.0,function(v)
+        if isInitializing then return end  -- size is restored separately, don't override
         local ns=UDim2.new(0,600*v,0,400*v); window.CurrentSize=ns
         createTween(window.MainFrame,{Size=ns},0.2); saveConfig(nil,true)
     end)
@@ -899,6 +946,7 @@ function GuiLibrary:CreateSettingsTab(window)
     GuiLibrary:CreateSection(settingsTab,"Preferences")
     GuiLibrary:CreateToggle(settingsTab,"Auto Save Config",autoSaveEnabled,function(state)
         autoSaveEnabled=state
+        if isInitializing then return end
         if state then saveConfig(nil,true); GuiLibrary:CreateNotification("Auto Save","Saves automatically",3,"success")
         else GuiLibrary:CreateNotification("Auto Save","Disabled",2,"info") end
     end)
@@ -916,11 +964,12 @@ end
 
 -- ==================== WINDOW ====================
 
-function GuiLibrary:CreateWindow(title, size)
+function GuiLibrary:CreateWindow(title, size, iconAsset)
     title=title or "GUI Library"; size=size or UDim2.new(0,600,0,400)
 
     local sg=Instance.new("ScreenGui"); sg.Name="GuiLibraryUI"
-    sg.ResetOnSpawn=false; sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; sg.Parent=game.CoreGui
+    sg.ResetOnSpawn=false; sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+    sg.IgnoreGuiInset=true; sg.Parent=game.CoreGui
 
     local loader=createLoader(sg,90)
 
@@ -955,11 +1004,30 @@ function GuiLibrary:CreateWindow(title, size)
         d.BackgroundColor3=dc; d.BorderSizePixel=0; d.Parent=tb; createCorner(d,5)
     end
 
+    -- Icon image (visible only when set via SetIcon or iconAsset arg)
+    local iconImg=Instance.new("ImageLabel"); iconImg.Name="WindowIcon"
+    iconImg.Size=UDim2.new(0,22,0,22); iconImg.Position=UDim2.new(0,60,0.5,-11)
+    iconImg.BackgroundTransparency=1; iconImg.Image=""; iconImg.Visible=false
+    iconImg.Parent=tb
+
     local titleLbl=Instance.new("TextLabel"); titleLbl.Name="TitleLabel"
     titleLbl.Size=UDim2.new(1,-170,1,0); titleLbl.Position=UDim2.new(0,60,0,0)
     titleLbl.BackgroundTransparency=1; titleLbl.Text=title; titleLbl.TextColor3=COLORS.TEXT
     titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=tb
+
+    local function setIcon(asset)
+        if not asset or asset=="" then
+            iconImg.Visible=false; iconImg.Image=""
+            titleLbl.Position=UDim2.new(0,60,0,0)
+            return
+        end
+        if type(asset)=="number" then asset="rbxassetid://"..tostring(asset)
+        elseif type(asset)=="string" and not asset:find("://") then asset="rbxassetid://"..asset end
+        iconImg.Image=asset; iconImg.Visible=true
+        titleLbl.Position=UDim2.new(0,88,0,0)
+    end
+    if iconAsset then setIcon(iconAsset) end
 
     local fpsLbl=Instance.new("TextLabel"); fpsLbl.Name="FPSLabel"
     fpsLbl.Size=UDim2.new(0,58,0,26); fpsLbl.Position=UDim2.new(1,-148,0.5,-13)
@@ -994,7 +1062,7 @@ function GuiLibrary:CreateWindow(title, size)
 
     local tabContent=Instance.new("Frame"); tabContent.Name="TabContentContainer"
     tabContent.Size=UDim2.new(1,0,1,-42); tabContent.Position=UDim2.new(0,0,0,42)
-    tabContent.BackgroundTransparency=1; tabContent.Parent=contentFrame
+    tabContent.BackgroundTransparency=1; tabContent.ClipsDescendants=true; tabContent.Parent=contentFrame
 
     -- ── Resize handle (bottom-right) ─────────────────────────
     local resizeHandle=Instance.new("Frame"); resizeHandle.Name="ResizeHandle"
@@ -1030,6 +1098,7 @@ function GuiLibrary:CreateWindow(title, size)
     local dragActive=false; local dragStart=Vector2.new(); local dragOrigPos=Vector2.new()
     local titleDragConn=UserInputService.InputBegan:Connect(function(inp)
         if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+        if not mf.Visible then return end
         local m=UserInputService:GetMouseLocation()
         local tp=tb.AbsolutePosition; local ts=tb.AbsoluteSize
         local overTitleBar=(m.X>=tp.X and m.X<=tp.X+ts.X and m.Y>=tp.Y and m.Y<=tp.Y+ts.Y)
@@ -1037,7 +1106,8 @@ function GuiLibrary:CreateWindow(title, size)
         local function over(btn) local bp=btn.AbsolutePosition;local bs=btn.AbsoluteSize;return m.X>=bp.X and m.X<=bp.X+bs.X and m.Y>=bp.Y and m.Y<=bp.Y+bs.Y end
         if overTitleBar and not over(settingsBtn) and not over(closeBtn) then
             dragActive=true; dragStart=m
-            dragOrigPos=Vector2.new(mf.AbsolutePosition.X,mf.AbsolutePosition.Y)
+            -- Use Position offsets directly (AbsolutePosition would offset by GuiInset)
+            dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
         end
     end); table.insert(activeInputConnections,titleDragConn)
 
@@ -1105,15 +1175,36 @@ function GuiLibrary:CreateWindow(title, size)
         TweenService:Create(mf,backInfo,{Size=sz,Position=UDim2.new(0,cx,0,cy),BackgroundTransparency=0}):Play()
     end
 
+    -- ── Unified tab switcher with slide animation ──────────────
+    local function switchToTab(targetName)
+        if window.CurrentTab==targetName then return end
+        local target=window.Tabs[targetName]; if not target then return end
+        local prev=window.CurrentTab and window.Tabs[window.CurrentTab] or nil
+        local goingRight=true
+        if prev and prev.Order and target.Order then goingRight = target.Order > prev.Order end
+        local outX = goingRight and -1 or 1
+        local inX  = goingRight and 1 or -1
+
+        if prev and prev.Content then
+            if prev.Button then createTween(prev.Button,{BackgroundColor3=COLORS.HOVER,TextColor3=COLORS.TEXT_MUTED}) end
+            local pc=prev.Content
+            createTween(pc,{Position=UDim2.new(outX,0,0,0)},ANIM_TIME)
+            local nm=prev.Name
+            task.delay(ANIM_TIME, function()
+                if window.CurrentTab~=nm then pc.Visible=false; pc.Position=UDim2.new(0,0,0,0) end
+            end)
+        end
+        window.CurrentTab=targetName
+        if target.Button then createTween(target.Button,{BackgroundColor3=COLORS.ACCENT,TextColor3=Color3.new(1,1,1)}) end
+        target.Content.Position=UDim2.new(inX,0,0,0)
+        target.Content.Visible=true
+        createTween(target.Content,{Position=UDim2.new(0,0,0,0)},ANIM_TIME)
+    end
+    window.SwitchTab=switchToTab
+
     -- ── Button wiring ──────────────────────────────────────────
     settingsBtn.MouseButton1Click:Connect(function()
-        local st=window.Tabs["Settings"]; if not st then return end
-        if window.CurrentTab and window.Tabs[window.CurrentTab] then
-            local cur=window.Tabs[window.CurrentTab]
-            if cur.Button then createTween(cur.Button,{BackgroundColor3=COLORS.HOVER,TextColor3=COLORS.TEXT_MUTED}) end
-            cur.Content.Visible=false
-        end
-        window.CurrentTab="Settings"; st.Content.Visible=true
+        if window.Tabs["Settings"] then switchToTab("Settings") end
     end)
     settingsBtn.MouseEnter:Connect(function() createTween(settingsBtn,{BackgroundTransparency=0,TextColor3=COLORS.TEXT}) end)
     settingsBtn.MouseLeave:Connect(function() createTween(settingsBtn,{BackgroundTransparency=0.35,TextColor3=COLORS.TEXT_MUTED}) end)
@@ -1139,6 +1230,8 @@ function GuiLibrary:CreateWindow(title, size)
 
     window.Hide=hideWindow; window.Show=showWindow
     window.Toggle=function() if isVisible then hideWindow() else showWindow() end end
+    window.SetIcon=setIcon
+    window.SetTitle=function(t) titleLbl.Text=tostring(t or "") end
 
     isInitializing=true
     GuiLibrary:CreateSettingsTab(window)
@@ -1173,22 +1266,13 @@ function GuiLibrary:CreateTab(window, name)
     end
     cl.Changed:Connect(updateCanvas); tabScroll.ChildAdded:Connect(updateCanvas); tabScroll.ChildRemoved:Connect(updateCanvas); updateCanvas()
 
-    local tab={Button=tabBtn,Content=tabScroll,Name=name,Elements={}}
+    window.TabCount=(window.TabCount or 0)+1
+    local tab={Button=tabBtn,Content=tabScroll,Name=name,Elements={},Order=window.TabCount}
     window.Tabs[name]=tab
 
-    local function switchTo()
-        if window.CurrentTab==name then return end
-        if window.CurrentTab and window.Tabs[window.CurrentTab] then
-            local cur=window.Tabs[window.CurrentTab]
-            if cur.Button then createTween(cur.Button,{BackgroundColor3=COLORS.HOVER,TextColor3=COLORS.TEXT_MUTED}) end
-            cur.Content.Visible=false
-        end
-        window.CurrentTab=name
-        createTween(tabBtn,{BackgroundColor3=COLORS.ACCENT,TextColor3=Color3.new(1,1,1)})
-        tabScroll.Visible=true
-    end
-
-    tabBtn.MouseButton1Click:Connect(switchTo)
+    tabBtn.MouseButton1Click:Connect(function()
+        if window.SwitchTab then window.SwitchTab(name) end
+    end)
     tabBtn.MouseEnter:Connect(function() if window.CurrentTab~=name then createTween(tabBtn,{BackgroundColor3=COLORS.BORDER}) end end)
     tabBtn.MouseLeave:Connect(function() if window.CurrentTab~=name then createTween(tabBtn,{BackgroundColor3=COLORS.HOVER}) end end)
 
