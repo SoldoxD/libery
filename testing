@@ -284,7 +284,14 @@ local function loadConfig(window)
             end
         end
     end
-    updateElementColors(window,true); return true
+    updateElementColors(window,true)
+    -- Defer notification so it doesn't fire during the loader
+    task.delay(2, function()
+        if autoSaveEnabled then
+            GuiLibrary:CreateNotification("Config Loaded", "Auto-save ON, settings restored.", 3, "success")
+        end
+    end)
+    return true
 end
 GuiLibrary.LoadConfig = loadConfig
 
@@ -378,11 +385,16 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     local eid=(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Toggle"
     f:SetAttribute("ElementID",eid); f:SetAttribute("WidgetType","Toggle"); f:SetAttribute("ToggleState",isToggled and 1 or 0)
 
-    local function setState(state)
-        isToggled=state
-        createTween(sw,{BackgroundColor3=isToggled and COLORS.SUCCESS or COLORS.BORDER})
-        createTween(ind,{Position=isToggled and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)})
-        f:SetAttribute("ToggleState",isToggled and 1 or 0)
+    local function setState(state, instant)
+        isToggled = state and true or false
+        if instant or isInitializing then
+            sw.BackgroundColor3 = isToggled and COLORS.SUCCESS or COLORS.BORDER
+            ind.Position = isToggled and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)
+        else
+            createTween(sw,{BackgroundColor3=isToggled and COLORS.SUCCESS or COLORS.BORDER})
+            createTween(ind,{Position=isToggled and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)})
+        end
+        f:SetAttribute("ToggleState", isToggled and 1 or 0)
     end
     sw.MouseButton1Click:Connect(function()
         setState(not isToggled)
