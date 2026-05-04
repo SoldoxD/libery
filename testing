@@ -965,6 +965,14 @@ function GuiLibrary:CreateSettingsTab(window)
     local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,8); cl.Parent=tabContent
     local cp=Instance.new("UIPadding"); cp.PaddingTop=UDim.new(0,12); cp.PaddingLeft=UDim.new(0,12); cp.PaddingRight=UDim.new(0,12); cp.PaddingBottom=UDim.new(0,12); cp.Parent=tabContent
 
+    local function updateSettingsCanvas()
+        local extraH = cp.PaddingTop.Offset + cp.PaddingBottom.Offset
+        tabContent.CanvasSize = UDim2.new(0, 0, 0, cl.AbsoluteContentSize.Y + extraH)
+    end
+    cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSettingsCanvas)
+    tabContent:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSettingsCanvas)
+    updateSettingsCanvas()
+
     local settingsTab={Button=nil,Content=tabContent,Name="Settings",Elements={},Order=999}
     window.Tabs["Settings"]=settingsTab
 
@@ -1024,6 +1032,11 @@ function GuiLibrary:CreateSettingsTab(window)
     GuiLibrary:CreateSection(settingsTab,"Actions")
     GuiLibrary:CreateButton(settingsTab,"Save Config Now",function()
         saveConfig(nil,true); GuiLibrary:CreateNotification("Config","Saved!",2,"success")
+    end)
+    GuiLibrary:CreateButton(settingsTab,"Clear Save File",function()
+        local ok=pcall(function() if isfile(getAutoSavePath()) then delfile(getAutoSavePath()) end end)
+        if ok then GuiLibrary:CreateNotification("Save File","Cleared. Reload script to start fresh.",3,"warning")
+        else GuiLibrary:CreateNotification("Save File","Failed to clear",2,"error") end
     end)
     GuiLibrary:CreateButton(settingsTab,"Reset Settings",function()
         for k,c in pairs(themes["Dark"]) do COLORS[k]=c end
@@ -1132,11 +1145,18 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     tabsCont.Size=UDim2.new(1,0,0,34); tabsCont.BackgroundTransparency=1
     tabsCont.BorderSizePixel=0
     tabsCont.ScrollingDirection=Enum.ScrollingDirection.X
-    tabsCont.ScrollBarThickness=3; tabsCont.ScrollBarImageColor3=COLORS.ACCENT
-    tabsCont.CanvasSize=UDim2.new(0,0,1,0); tabsCont.AutomaticCanvasSize=Enum.AutomaticSize.X
+    tabsCont.ScrollBarThickness=0
+    tabsCont.CanvasSize=UDim2.new(0,0,0,0)
+    tabsCont.ClipsDescendants=true
+    tabsCont.ScrollingEnabled=true
+    tabsCont.Active=true
     tabsCont.Parent=contentFrame
     local tabsLayout=Instance.new("UIListLayout"); tabsLayout.FillDirection=Enum.FillDirection.Horizontal
     tabsLayout.SortOrder=Enum.SortOrder.LayoutOrder; tabsLayout.Padding=UDim.new(0,4); tabsLayout.Parent=tabsCont
+    -- Bind canvas size to actual layout content
+    tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        tabsCont.CanvasSize = UDim2.new(0, tabsLayout.AbsoluteContentSize.X, 0, 0)
+    end)
 
     local tabContent=Instance.new("Frame"); tabContent.Name="TabContentContainer"
     tabContent.Size=UDim2.new(1,0,1,-42); tabContent.Position=UDim2.new(0,0,0,42)
@@ -1331,7 +1351,15 @@ function GuiLibrary:CreateTab(window, name)
     tabBtn.Size=UDim2.new(0,90,1,0); tabBtn.BackgroundColor3=COLORS.HOVER
     tabBtn.Text=name; tabBtn.TextColor3=COLORS.TEXT_MUTED; tabBtn.TextSize=12
     tabBtn.Font=Enum.Font.GothamBold; tabBtn.BorderSizePixel=0; tabBtn.AutoButtonColor=false
+    tabBtn.TextTruncate=Enum.TextTruncate.AtEnd
     tabBtn.Parent=window.TabsContainer; createCorner(tabBtn,8)
+    -- Force canvas update for horizontal scroll
+    task.defer(function()
+        local tc=window.TabsContainer; if tc then
+            local layout=tc:FindFirstChildWhichIsA("UIListLayout")
+            if layout then tc.CanvasSize=UDim2.new(0,layout.AbsoluteContentSize.X,0,0) end
+        end
+    end)
 
     local tabScroll=Instance.new("ScrollingFrame"); tabScroll.Name=name.."Content"
     tabScroll.Size=UDim2.new(1,0,1,0); tabScroll.BackgroundTransparency=1
@@ -1343,11 +1371,12 @@ function GuiLibrary:CreateTab(window, name)
     local cp=Instance.new("UIPadding"); cp.PaddingTop=UDim.new(0,12); cp.PaddingLeft=UDim.new(0,12); cp.PaddingRight=UDim.new(0,12); cp.PaddingBottom=UDim.new(0,12); cp.Parent=tabScroll
 
     local function updateCanvas()
-        local h=cp.PaddingTop.Offset+cp.PaddingBottom.Offset
-        for _,c in ipairs(tabScroll:GetChildren()) do if c:IsA("GuiObject") then h=h+c.Size.Y.Offset+cl.Padding.Offset end end
-        tabScroll.CanvasSize=UDim2.new(0,0,0,h)
+        local extraH = cp.PaddingTop.Offset + cp.PaddingBottom.Offset
+        tabScroll.CanvasSize = UDim2.new(0, 0, 0, cl.AbsoluteContentSize.Y + extraH)
     end
-    cl.Changed:Connect(updateCanvas); tabScroll.ChildAdded:Connect(updateCanvas); tabScroll.ChildRemoved:Connect(updateCanvas); updateCanvas()
+    cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+    tabScroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvas)
+    updateCanvas()
 
     window.TabCount=(window.TabCount or 0)+1
     local tab={Button=tabBtn,Content=tabScroll,Name=name,Elements={},Order=window.TabCount}
