@@ -1,5 +1,9 @@
-local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
-
+-- ════════════════════════════════════════════════════════════════════
+-- COMPREHENSIVE EXAMPLE — tests every feature of GuiLibrary
+-- ════════════════════════════════════════════════════════════════════
+local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))() -- replace with your loadstring URL
+-- OR if loaded locally:
+-- local GuiLibrary = require(path.to.GuiLibrary)
 
 -- GuiLibrary.debugPrints = true  -- uncomment to enable verbose output
 
@@ -225,6 +229,63 @@ end)
 
 GuiLibrary:CreateButton(miscTab, "Server Hop", function()
     GuiLibrary:CreateNotification("Server Hop", "Looking for server...", 2, "info")
+end)
+
+-- ════════════════════════════════════════════════════════════════════
+-- TAB 5b — Live Label Demo (auto-heist style counter)
+-- ════════════════════════════════════════════════════════════════════
+local heistTab = GuiLibrary:CreateTab(window, "Heist")
+
+local heistSection = GuiLibrary:CreateSection(heistTab, "Auto Heist")
+
+-- Live-updating labels: returned table has SetText / GetText / SetColor / SetVisible
+local bagLabel    = GuiLibrary:CreateLabel(heistTab, "Bag: $0 / $50,000")
+local statusLabel = GuiLibrary:CreateLabel(heistTab, "Status: Idle")
+local timerLabel  = GuiLibrary:CreateLabel(heistTab, "Time: 00:00")
+
+-- A button whose label and callback can be swapped at runtime
+local heistRunning = false
+local heistBtn
+heistBtn = GuiLibrary:CreateButton(heistTab, "Start Heist", function()
+    heistRunning = not heistRunning
+    if heistRunning then
+        heistBtn.SetText("Stop Heist")
+        statusLabel.SetText("Status: Running").SetColor(Color3.fromRGB(74, 222, 128))
+        heistSection.SetText("Auto Heist (Active)")
+    else
+        heistBtn.SetText("Start Heist")
+        statusLabel.SetText("Status: Idle").SetColor(Color3.fromRGB(120, 120, 150))
+        heistSection.SetText("Auto Heist")
+    end
+end)
+
+-- Background loop updates the live labels
+task.spawn(function()
+    local startTick = tick()
+    local bag = 0
+    while task.wait(0.5) do
+        if bagLabel.Instance and bagLabel.Instance.Parent then
+            if heistRunning then
+                bag = math.min(bag + math.random(500, 1500), 50000)
+                local mins = math.floor((tick() - startTick) / 60)
+                local secs = math.floor((tick() - startTick) % 60)
+                bagLabel.SetText(string.format("Bag: $%d / $50,000", bag))
+                timerLabel.SetText(string.format("Time: %02d:%02d", mins, secs))
+                if bag >= 50000 then
+                    statusLabel.SetText("Status: Bag Full!").SetColor(Color3.fromRGB(255, 204, 0))
+                end
+            end
+        else
+            break
+        end
+    end
+end)
+
+GuiLibrary:CreateButton(heistTab, "Reset Bag", function()
+    bagLabel.SetText("Bag: $0 / $50,000")
+    timerLabel.SetText("Time: 00:00")
+    statusLabel.SetText("Status: Idle").SetColor(Color3.fromRGB(120, 120, 150))
+    GuiLibrary:CreateNotification("Heist", "Bag reset", 2, "info")
 end)
 
 -- ════════════════════════════════════════════════════════════════════
