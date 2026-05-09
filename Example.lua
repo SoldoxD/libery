@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════
 -- COMPREHENSIVE EXAMPLE — tests every feature of GuiLibrary v2.2.0
 -- ════════════════════════════════════════════════════════════════════
-local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/testing"))() -- replace with your loadstring URL
+local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))()
 -- OR if loaded locally:
 -- local GuiLibrary = require(path.to.GuiLibrary)
 
