@@ -1229,11 +1229,11 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
 
     -- Icon (lives at the left edge of the title bar, replaces the old window-control dots)
     local iconImg=Instance.new("ImageLabel"); iconImg.Name="WindowIcon"
-    iconImg.Size=UDim2.new(0,24,0,24); iconImg.Position=UDim2.new(0,10,0.5,-12)
+    iconImg.Size=UDim2.new(0,32,0,32); iconImg.Position=UDim2.new(0,10,0.5,-16)
     iconImg.BackgroundTransparency=1; iconImg.Image=""; iconImg.Visible=false
     iconImg.ImageColor3=Color3.new(1,1,1); iconImg.ImageTransparency=0
     iconImg.ScaleType=Enum.ScaleType.Fit; iconImg.ZIndex=5
-    iconImg.Parent=tb
+    iconImg.Parent=tb; createCorner(iconImg,8)
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Name="TitleLabel"
     titleLbl.Size=UDim2.new(1,-170,1,0); titleLbl.Position=UDim2.new(0,16,0,0)
@@ -1263,7 +1263,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         iconImg.ImageTransparency=0
         iconImg.ImageColor3=Color3.new(1,1,1)
         iconImg.Visible=true
-        titleLbl.Position=UDim2.new(0,42,0,0)
+        titleLbl.Position=UDim2.new(0,50,0,0)
     end
     if iconAsset then setIcon(iconAsset) end
 
