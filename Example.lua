@@ -1,30 +1,36 @@
 -- ════════════════════════════════════════════════════════════════════
--- COMPREHENSIVE EXAMPLE — tests every feature of GuiLibrary
+-- COMPREHENSIVE EXAMPLE — tests every feature of GuiLibrary v2.2.0
 -- ════════════════════════════════════════════════════════════════════
-local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main"))() -- replace with your loadstring URL
+local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/testing"))() -- replace with your loadstring URL
 -- OR if loaded locally:
 -- local GuiLibrary = require(path.to.GuiLibrary)
 
--- GuiLibrary.debugPrints = true  -- uncomment to enable verbose output
+-- GuiLibrary.debugPrints = true  -- uncomment for verbose save/load output
 
-local Players      = game:GetService("Players")
-local LocalPlayer  = Players.LocalPlayer
-local Character    = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid     = Character:WaitForChild("Humanoid")
+-- ── Icon ─────────────────────────────────────────────────────────────
+-- Set your icon ONCE here — every window created afterwards uses it.
+-- Pass a numeric asset ID or an "rbxassetid://..." string.
+
+
+local Players     = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid    = Character:WaitForChild("Humanoid")
 
 LocalPlayer.CharacterAdded:Connect(function(c)
     Character = c
     Humanoid  = c:WaitForChild("Humanoid")
 end)
 
--- Create the main window — third arg is an optional icon (asset id)
-local window = GuiLibrary:CreateWindow("Comprehensive Demo", UDim2.new(0, 620, 0, 420), 132382392)
+-- Create the main window.
+-- Icon is read from GuiLibrary.Icon automatically (no 3rd arg needed).
+-- You can still override per-window:  GuiLibrary:CreateWindow("Title", size, otherIconId)
+local window = GuiLibrary:CreateWindow("Comprehensive Demo", UDim2.new(0, 620, 0, 420))
 
--- You can also change the icon at runtime:
--- window.SetIcon(132382392)
--- window.SetIcon("rbxassetid://132382392")
--- window.SetIcon(nil)            -- removes the icon
--- window.SetTitle("Renamed!")    -- updates the window title
+-- Runtime icon / title helpers (all optional):
+-- window.SetIcon(105049082124083)   -- change icon
+-- window.SetIcon(nil)               -- remove icon
+-- window.SetTitle("Renamed!")       -- update title text
 
 -- ════════════════════════════════════════════════════════════════════
 -- TAB 1 — Player
@@ -81,39 +87,20 @@ GuiLibrary:CreateToggle(visualTab, "Player ESP", false, function(state)
         state and "success" or "info")
 end)
 
-GuiLibrary:CreateToggle(visualTab, "Chams", false, function(state)
-    print("Chams:", state)
-end)
-
-GuiLibrary:CreateToggle(visualTab, "Tracers", false, function(state)
-    print("Tracers:", state)
-end)
-
-GuiLibrary:CreateToggle(visualTab, "Names", true, function(state)
-    print("Names:", state)
-end)
+GuiLibrary:CreateToggle(visualTab, "Chams",   false, function(state) print("Chams:",   state) end)
+GuiLibrary:CreateToggle(visualTab, "Tracers", false, function(state) print("Tracers:", state) end)
+GuiLibrary:CreateToggle(visualTab, "Names",   true,  function(state) print("Names:",   state) end)
 
 GuiLibrary:CreateSection(visualTab, "Color")
 
-GuiLibrary:CreateColorPicker(visualTab, "ESP Color", Color3.fromRGB(255, 80, 80), function(color)
-    print("ESP color:", color)
-end)
-GuiLibrary:CreateColorPicker(visualTab, "Chams Color", Color3.fromRGB(80, 220, 255), function(color)
-    print("Chams color:", color)
-end)
-GuiLibrary:CreateColorPicker(visualTab, "Tracer Color", Color3.fromRGB(180, 80, 255), function(color)
-    print("Tracer color:", color)
-end)
+GuiLibrary:CreateColorPicker(visualTab, "ESP Color",    Color3.fromRGB(255, 80,  80),  function(c) print("ESP color:",    c) end)
+GuiLibrary:CreateColorPicker(visualTab, "Chams Color",  Color3.fromRGB(80,  220, 255), function(c) print("Chams color:",  c) end)
+GuiLibrary:CreateColorPicker(visualTab, "Tracer Color", Color3.fromRGB(180, 80,  255), function(c) print("Tracer color:", c) end)
 
 GuiLibrary:CreateSection(visualTab, "Camera")
 
-GuiLibrary:CreateSlider(visualTab, "FOV", 70, 120, 90, function(value)
-    print("FOV:", value)
-end)
-
-GuiLibrary:CreateSlider(visualTab, "Distance", 50, 1000, 250, function(value)
-    print("Distance:", value)
-end)
+GuiLibrary:CreateSlider(visualTab, "FOV",      70,  120,  90,  function(v) print("FOV:",      v) end)
+GuiLibrary:CreateSlider(visualTab, "Distance", 50,  1000, 250, function(v) print("Distance:", v) end)
 
 -- ════════════════════════════════════════════════════════════════════
 -- TAB 3 — Combat
@@ -123,15 +110,15 @@ local combatTab = GuiLibrary:CreateTab(window, "Combat")
 GuiLibrary:CreateSection(combatTab, "Aimbot")
 
 GuiLibrary:CreateToggle(combatTab, "Aimbot Enabled", false, function(s) print("aimbot:", s) end)
-GuiLibrary:CreateSlider(combatTab, "Smoothness",  0, 1,  0.3, function(v) print("smooth:", v) end)
-GuiLibrary:CreateSlider(combatTab, "FOV Radius", 10, 500, 90, function(v) print("fov radius:", v) end)
+GuiLibrary:CreateSlider(combatTab, "Smoothness",  0,   1,   0.3, function(v) print("smooth:",     v) end)
+GuiLibrary:CreateSlider(combatTab, "FOV Radius",  10,  500, 90,  function(v) print("fov radius:", v) end)
 
 GuiLibrary:CreateDropdown(combatTab, "Target Part",
-    {"Head","Torso","HumanoidRootPart","RightArm","LeftArm"},
+    {"Head", "Torso", "HumanoidRootPart", "RightArm", "LeftArm"},
     function(part) print("target part:", part) end)
 
 GuiLibrary:CreateDropdown(combatTab, "Aim Mode",
-    {"Closest","Lowest HP","Random","Most Visible"},
+    {"Closest", "Lowest HP", "Random", "Most Visible"},
     function(mode) print("aim mode:", mode) end)
 
 GuiLibrary:CreateKeybind(combatTab, "Aim Key", Enum.KeyCode.E, function()
@@ -150,8 +137,7 @@ local function getPlayerNames()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then table.insert(names, p.Name) end
     end
-    if #names == 0 then names = {"(no players)"} end
-    return names
+    return #names > 0 and names or {"(no players)"}
 end
 
 local targetDropdown = GuiLibrary:CreateDropdown(playersTab, "Target Player",
@@ -161,17 +147,13 @@ GuiLibrary:CreateButton(playersTab, "Refresh Player List", function()
     targetDropdown.UpdateOptions(getPlayerNames(), true)
 end)
 
-Players.PlayerAdded:Connect(function()
-    targetDropdown.UpdateOptions(getPlayerNames(), true)
-end)
-Players.PlayerRemoving:Connect(function()
-    targetDropdown.UpdateOptions(getPlayerNames(), true)
-end)
+Players.PlayerAdded:Connect(function()   targetDropdown.UpdateOptions(getPlayerNames(), true) end)
+Players.PlayerRemoving:Connect(function() targetDropdown.UpdateOptions(getPlayerNames(), true) end)
 
 GuiLibrary:CreateSection(playersTab, "Actions")
 
 GuiLibrary:CreateButton(playersTab, "Teleport To Target", function()
-    local name = targetDropdown.GetValue()
+    local name   = targetDropdown.GetValue()
     local target = Players:FindFirstChild(name)
     if target and target.Character then
         local root   = target.Character:FindFirstChild("HumanoidRootPart")
@@ -220,7 +202,7 @@ end)
 
 GuiLibrary:CreateSection(miscTab, "Server")
 
-local serverDropdown = GuiLibrary:CreateDropdown(miscTab, "Region",
+GuiLibrary:CreateDropdown(miscTab, "Region",
     {"Auto", "US East", "US West", "EU", "Asia"}, function(r) print("region:", r) end)
 
 GuiLibrary:CreateButton(miscTab, "Rejoin", function()
@@ -232,18 +214,16 @@ GuiLibrary:CreateButton(miscTab, "Server Hop", function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════
--- TAB 5b — Live Label Demo (auto-heist style counter)
+-- TAB 6 — Heist (live label demo)
 -- ════════════════════════════════════════════════════════════════════
 local heistTab = GuiLibrary:CreateTab(window, "Heist")
 
 local heistSection = GuiLibrary:CreateSection(heistTab, "Auto Heist")
 
--- Live-updating labels: returned table has SetText / GetText / SetColor / SetVisible
 local bagLabel    = GuiLibrary:CreateLabel(heistTab, "Bag: $0 / $50,000")
 local statusLabel = GuiLibrary:CreateLabel(heistTab, "Status: Idle")
 local timerLabel  = GuiLibrary:CreateLabel(heistTab, "Time: 00:00")
 
--- A button whose label and callback can be swapped at runtime
 local heistRunning = false
 local heistBtn
 heistBtn = GuiLibrary:CreateButton(heistTab, "Start Heist", function()
@@ -259,7 +239,6 @@ heistBtn = GuiLibrary:CreateButton(heistTab, "Start Heist", function()
     end
 end)
 
--- Background loop updates the live labels
 task.spawn(function()
     local startTick = tick()
     local bag = 0
@@ -289,49 +268,39 @@ GuiLibrary:CreateButton(heistTab, "Reset Bag", function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════
--- TAB 6 — Notification Tester (spam to verify stacking)
+-- TAB 7 — Notifications tester
 -- ════════════════════════════════════════════════════════════════════
 local notifTab = GuiLibrary:CreateTab(window, "Notify")
 
 GuiLibrary:CreateSection(notifTab, "Notifications")
 
-GuiLibrary:CreateButton(notifTab, "Spawn Info", function()
-    GuiLibrary:CreateNotification("Info", "An informational notification.", 4, "info")
-end)
-GuiLibrary:CreateButton(notifTab, "Spawn Success", function()
-    GuiLibrary:CreateNotification("Success", "Operation finished successfully.", 4, "success")
-end)
-GuiLibrary:CreateButton(notifTab, "Spawn Warning", function()
-    GuiLibrary:CreateNotification("Warning", "Watch out — something looks off.", 4, "warning")
-end)
-GuiLibrary:CreateButton(notifTab, "Spawn Error", function()
-    GuiLibrary:CreateNotification("Error", "Something went wrong.", 4, "error")
-end)
-GuiLibrary:CreateButton(notifTab, "Spam x5 (test stacking)", function()
+GuiLibrary:CreateButton(notifTab, "Spawn Info",    function() GuiLibrary:CreateNotification("Info",    "An informational notification.",      4, "info")    end)
+GuiLibrary:CreateButton(notifTab, "Spawn Success", function() GuiLibrary:CreateNotification("Success", "Operation finished successfully.",    4, "success") end)
+GuiLibrary:CreateButton(notifTab, "Spawn Warning", function() GuiLibrary:CreateNotification("Warning", "Watch out — something looks off.",    4, "warning") end)
+GuiLibrary:CreateButton(notifTab, "Spawn Error",   function() GuiLibrary:CreateNotification("Error",   "Something went wrong.",               4, "error")   end)
+GuiLibrary:CreateButton(notifTab, "Spam ×5 (stacking test)", function()
     for i = 1, 5 do
-        GuiLibrary:CreateNotification("Notification "..i, "This is notification number "..i, 5, "info")
+        GuiLibrary:CreateNotification("Notification " .. i, "This is notification #" .. i, 5, "info")
         task.wait(0.05)
     end
 end)
 
 -- ════════════════════════════════════════════════════════════════════
--- TAB 7 — Tab Overflow Test
--- (creates extra tabs so you can test horizontal tab scrolling)
+-- TAB 8 — Tab overflow test (horizontal scroll)
 -- ════════════════════════════════════════════════════════════════════
 for i = 1, 6 do
-    local extra = GuiLibrary:CreateTab(window, "Extra "..i)
-    GuiLibrary:CreateSection(extra, "Tab "..i)
-    GuiLibrary:CreateLabel(extra, "This is extra tab #"..i.." — try resizing the window smaller, then scroll the tab bar.")
-    GuiLibrary:CreateToggle(extra, "Sample toggle "..i, false, function(s) print("tab",i,"toggle:",s) end)
-    GuiLibrary:CreateSlider(extra, "Sample slider "..i, 0, 100, 50, function(v) print("tab",i,"slider:",v) end)
+    local extra = GuiLibrary:CreateTab(window, "Extra " .. i)
+    GuiLibrary:CreateSection(extra, "Tab " .. i)
+    GuiLibrary:CreateLabel(extra, "Extra tab #" .. i .. " — resize the window smaller to test tab bar scrolling.")
+    GuiLibrary:CreateToggle(extra, "Sample toggle " .. i, false, function(s) print("tab", i, "toggle:", s) end)
+    GuiLibrary:CreateSlider(extra, "Sample slider " .. i, 0, 100, 50, function(v) print("tab", i, "slider:", v) end)
 end
 
 -- ════════════════════════════════════════════════════════════════════
--- Programmatic update demo (after 5 sec)
+-- Programmatic update demo (runs 5 s after load)
 -- ════════════════════════════════════════════════════════════════════
 task.delay(5, function()
     walkSpeedSlider.SetValue(32)
     jumpPowerSlider.SetValue(100)
-    serverDropdown.UpdateOptions({"NA", "EU", "APAC"}, false)
     GuiLibrary:CreateNotification("Demo", "Programmatic update applied.", 3, "info")
 end)
