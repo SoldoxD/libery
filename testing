@@ -112,11 +112,13 @@ local function updateElementColors(window, instant)
         if tab.Button then
             local isActive = window.CurrentTab == tabName
             if isActive then
-                apply(tab.Button,{BackgroundColor3=COLORS.ACCENT,BackgroundTransparency=0,TextColor3=Color3.new(1,1,1)})
-                local hl=tab.Button:FindFirstChild("TabHighlight"); if hl then apply(hl,{BackgroundTransparency=0.88}) end
+                apply(tab.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT})
+                tab.Button.Font=Enum.Font.GothamBold
+                local ind=tab.Button:FindFirstChild("TabIndicator"); if ind then apply(ind,{BackgroundColor3=COLORS.ACCENT,BackgroundTransparency=0}) end
             else
                 apply(tab.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
-                local hl=tab.Button:FindFirstChild("TabHighlight"); if hl then apply(hl,{BackgroundTransparency=1}) end
+                tab.Button.Font=Enum.Font.Gotham
+                local ind=tab.Button:FindFirstChild("TabIndicator"); if ind then apply(ind,{BackgroundTransparency=1}) end
             end
         end
         if tab.Content then apply(tab.Content,{ScrollBarImageColor3=COLORS.ACCENT}) end
@@ -1223,23 +1225,16 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     accent.BackgroundColor3=COLORS.ACCENT; accent.BackgroundTransparency=0.35
     accent.BorderSizePixel=0; accent.Parent=tb
 
-    -- three window-control dots
-    local dotColors={Color3.fromRGB(255,95,87),Color3.fromRGB(255,189,46),Color3.fromRGB(39,201,63)}
-    for i,dc in ipairs(dotColors) do
-        local d=Instance.new("Frame"); d.Size=UDim2.new(0,10,0,10); d.Position=UDim2.new(0,8+(i-1)*16,0.5,-5)
-        d.BackgroundColor3=dc; d.BorderSizePixel=0; d.Parent=tb; createCorner(d,5)
-    end
-
-    -- Icon image (visible only when set via SetIcon or iconAsset arg)
+    -- Icon (lives at the left edge of the title bar, replaces the old window-control dots)
     local iconImg=Instance.new("ImageLabel"); iconImg.Name="WindowIcon"
-    iconImg.Size=UDim2.new(0,22,0,22); iconImg.Position=UDim2.new(0,60,0.5,-11)
+    iconImg.Size=UDim2.new(0,24,0,24); iconImg.Position=UDim2.new(0,10,0.5,-12)
     iconImg.BackgroundTransparency=1; iconImg.Image=""; iconImg.Visible=false
     iconImg.ImageColor3=Color3.new(1,1,1); iconImg.ImageTransparency=0
     iconImg.ScaleType=Enum.ScaleType.Fit; iconImg.ZIndex=5
     iconImg.Parent=tb
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Name="TitleLabel"
-    titleLbl.Size=UDim2.new(1,-170,1,0); titleLbl.Position=UDim2.new(0,60,0,0)
+    titleLbl.Size=UDim2.new(1,-170,1,0); titleLbl.Position=UDim2.new(0,16,0,0)
     titleLbl.BackgroundTransparency=1; titleLbl.Text=title; titleLbl.TextColor3=COLORS.TEXT
     titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=tb
@@ -1247,7 +1242,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     local function setIcon(asset)
         if asset==nil or asset==false or asset=="" or asset==0 then
             iconImg.Visible=false; iconImg.Image=""
-            titleLbl.Position=UDim2.new(0,60,0,0)
+            titleLbl.Position=UDim2.new(0,16,0,0)
             return
         end
         if type(asset)=="number" then
@@ -1259,7 +1254,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         iconImg.ImageTransparency=0
         iconImg.ImageColor3=Color3.new(1,1,1)
         iconImg.Visible=true
-        titleLbl.Position=UDim2.new(0,88,0,0)
+        titleLbl.Position=UDim2.new(0,42,0,0)
     end
     if iconAsset then setIcon(iconAsset) end
 
@@ -1462,8 +1457,9 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         if prev and prev.Content then
             if prev.Button then
                 createTween(prev.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
-                local hl=prev.Button:FindFirstChild("TabHighlight")
-                if hl then createTween(hl,{BackgroundTransparency=1}) end
+                prev.Button.Font=Enum.Font.Gotham
+                local ind=prev.Button:FindFirstChild("TabIndicator")
+                if ind then createTween(ind,{BackgroundTransparency=1}) end
             end
             local pc=prev.Content
             createTween(pc,{Position=UDim2.new(outX,0,0,0)},ANIM_TIME)
@@ -1474,9 +1470,10 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         end
         window.CurrentTab=targetName
         if target.Button then
-            createTween(target.Button,{BackgroundColor3=COLORS.ACCENT,BackgroundTransparency=0,TextColor3=Color3.new(1,1,1)})
-            local hl=target.Button:FindFirstChild("TabHighlight")
-            if hl then createTween(hl,{BackgroundTransparency=0.88}) end
+            createTween(target.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT})
+            target.Button.Font=Enum.Font.GothamBold
+            local ind=target.Button:FindFirstChild("TabIndicator")
+            if ind then createTween(ind,{BackgroundTransparency=0}) end
         end
         target.Content.Position=UDim2.new(inX,0,0,0)
         target.Content.Visible=true
@@ -1538,22 +1535,21 @@ end
 
 function GuiLibrary:CreateTab(window, name)
     local tabBtn=Instance.new("TextButton"); tabBtn.Name=name.."Tab"
-    -- Auto-size width based on the text, fixed height 30 (tab bar is 34 tall internally)
     tabBtn.AutomaticSize=Enum.AutomaticSize.X
-    tabBtn.Size=UDim2.new(0,0,0,30)
+    tabBtn.Size=UDim2.new(0,0,0,28)
     tabBtn.BackgroundColor3=COLORS.HOVER; tabBtn.BackgroundTransparency=1
     tabBtn.Text=name; tabBtn.TextColor3=COLORS.TEXT_MUTED; tabBtn.TextSize=12
-    tabBtn.Font=Enum.Font.GothamBold; tabBtn.BorderSizePixel=0; tabBtn.AutoButtonColor=false
+    tabBtn.Font=Enum.Font.Gotham; tabBtn.BorderSizePixel=0; tabBtn.AutoButtonColor=false
     tabBtn.TextXAlignment=Enum.TextXAlignment.Center
-    tabBtn.Parent=window.TabsContainer; createCorner(tabBtn,8)
-    -- Internal padding so the text doesn't touch the rounded edges
-    local pad=Instance.new("UIPadding"); pad.PaddingLeft=UDim.new(0,16); pad.PaddingRight=UDim.new(0,16)
+    tabBtn.Parent=window.TabsContainer; createCorner(tabBtn,6)
+    local pad=Instance.new("UIPadding"); pad.PaddingLeft=UDim.new(0,14); pad.PaddingRight=UDim.new(0,14)
     pad.Parent=tabBtn
-    -- Inner gloss overlay — visible only when tab is active
-    local tabHl=Instance.new("Frame"); tabHl.Name="TabHighlight"
-    tabHl.Size=UDim2.new(1,0,0.45,0); tabHl.BackgroundColor3=Color3.new(1,1,1)
-    tabHl.BackgroundTransparency=1; tabHl.BorderSizePixel=0; tabHl.ZIndex=2; tabHl.Parent=tabBtn
-    createCorner(tabHl,8)
+    -- 2 px accent underline — shown only on the active tab
+    local tabInd=Instance.new("Frame"); tabInd.Name="TabIndicator"
+    tabInd.Size=UDim2.new(1,-8,0,2); tabInd.Position=UDim2.new(0,4,1,-2)
+    tabInd.BackgroundColor3=COLORS.ACCENT; tabInd.BackgroundTransparency=1
+    tabInd.BorderSizePixel=0; tabInd.ZIndex=3; tabInd.Parent=tabBtn
+    createCorner(tabInd,1)
     -- Force canvas update for horizontal scroll
     task.defer(function()
         local tc=window.TabsContainer; if tc then
@@ -1588,7 +1584,7 @@ function GuiLibrary:CreateTab(window, name)
     end)
     tabBtn.MouseEnter:Connect(function()
         if window.CurrentTab~=name then
-            createTween(tabBtn,{BackgroundColor3=COLORS.HOVER,BackgroundTransparency=0.35,TextColor3=COLORS.TEXT})
+            createTween(tabBtn,{BackgroundColor3=COLORS.HOVER,BackgroundTransparency=0.55,TextColor3=COLORS.TEXT})
         end
     end)
     tabBtn.MouseLeave:Connect(function()
@@ -1599,9 +1595,10 @@ function GuiLibrary:CreateTab(window, name)
 
     if not window.CurrentTab then
         window.CurrentTab=name
-        tabBtn.BackgroundColor3=COLORS.ACCENT; tabBtn.BackgroundTransparency=0
-        tabBtn.TextColor3=Color3.new(1,1,1)
-        local hl=tabBtn:FindFirstChild("TabHighlight"); if hl then hl.BackgroundTransparency=0.88 end
+        tabBtn.BackgroundTransparency=1
+        tabBtn.TextColor3=COLORS.TEXT
+        tabBtn.Font=Enum.Font.GothamBold
+        local ind=tabBtn:FindFirstChild("TabIndicator"); if ind then ind.BackgroundTransparency=0 end
         tabScroll.Visible=true
     end
 
