@@ -88,9 +88,14 @@ All components are added to a tab and stacked vertically in the order they're cr
 ### Button
 
 ```lua
-GuiLibrary:CreateButton(tab, "Label", function()
+local btn = GuiLibrary:CreateButton(tab, "Label", function()
     -- clicked
 end)
+
+btn.SetText("New label")     -- change the displayed text
+btn.SetCallback(function() end) -- swap the click handler at runtime
+btn.SetVisible(false)        -- hide / show
+btn.Instance                 -- direct access to the TextButton
 ```
 
 ### Toggle
@@ -159,16 +164,47 @@ Players.PlayerRemoving:Connect(function() target.UpdateOptions(getPlayerNames(),
 
 ### Label
 
+A label that can be **updated dynamically** — perfect for live counters, status text, etc.
+
 ```lua
-GuiLibrary:CreateLabel(tab, "Some informational text")
+local bag = GuiLibrary:CreateLabel(tab, "Bag: $0 / $0")
+
+bag.SetText("Bag: $25,000 / $50,000")  -- update text any time
+bag.GetText()                          -- read current text
+bag.SetColor(Color3.fromRGB(0,255,0))  -- change color
+bag.SetVisible(false)                  -- hide / show
+bag.Instance                           -- direct access to the TextLabel
+```
+
+All setters return self, so you can chain:
+
+```lua
+bag.SetText("Done").SetColor(Color3.fromRGB(0,255,0))
+```
+
+#### Live counter example
+
+```lua
+local bagLabel = GuiLibrary:CreateLabel(tabHeist, "Bag: $0 / $0")
+
+task.spawn(function()
+    while task.wait(0.5) do
+        local cur, max = getBagState()
+        bagLabel.SetText(string.format("Bag: $%d / $%d", cur, max))
+    end
+end)
 ```
 
 ### Section
 
-A styled header used to visually group elements.
+A styled header used to visually group elements. Title is also updateable.
 
 ```lua
-GuiLibrary:CreateSection(tab, "Movement")
+local sec = GuiLibrary:CreateSection(tab, "Movement")
+
+sec.SetText("Player Settings")  -- updates the section title
+sec.SetVisible(false)
+sec.Instance                    -- the section Frame
 ```
 
 ### Input
@@ -360,12 +396,12 @@ GuiLibrary:CreateTab(window, name)               -- → tab
 
 ### Components
 ```lua
-GuiLibrary:CreateButton(tab, text, callback)
+GuiLibrary:CreateButton(tab, text, callback)                  -- → { SetText, SetCallback, SetVisible, GetText, Instance }
 GuiLibrary:CreateToggle(tab, text, default, callback)         -- → { GetValue, SetValue, Frame }
 GuiLibrary:CreateSlider(tab, text, min, max, default, callback) -- → { GetValue, SetValue, Frame }
 GuiLibrary:CreateDropdown(tab, text, options, callback)       -- → { GetValue, SetValue, UpdateOptions, Frame }
-GuiLibrary:CreateLabel(tab, text)
-GuiLibrary:CreateSection(tab, title)
+GuiLibrary:CreateLabel(tab, text)                             -- → { SetText, GetText, SetColor, SetVisible, Instance }
+GuiLibrary:CreateSection(tab, title)                          -- → { SetText, GetText, SetVisible, Instance }
 GuiLibrary:CreateInput(tab, placeholder, callback)            -- → { GetValue, TextBox, Frame }
 GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback) -- → { GetValue, SetColor, Frame }
 GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)     -- → { GetKey, SetKey, Frame }
@@ -390,6 +426,10 @@ GuiLibrary.CurrentWindow         -- the most recently created window
 ---
 
 ## Changelog
+
+### 2.1.1
+- `CreateLabel`, `CreateSection`, `CreateButton` now return controller tables with `SetText` / `GetText` / `SetVisible` (and `SetCallback` for buttons, `SetColor` for labels). Underlying instance still accessible via `.Instance`.
+- All setters chainable.
 
 ### 2.1.0
 - **Auto-save fully overhauled** — saves now include window position, size, theme, animations, FPS visibility, notification preferences, lock position, and the auto-save flag itself.
