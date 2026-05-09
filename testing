@@ -32,6 +32,7 @@ local themes = {
 }
 
 GuiLibrary.debugPrints = false  -- set to true to see save/load diagnostics
+GuiLibrary.Icon = nil           -- set this before CreateWindow to use a default icon for every window
 local function dprint(...) if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end end
 
 local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
@@ -1194,6 +1195,7 @@ end
 
 function GuiLibrary:CreateWindow(title, size, iconAsset)
     title=title or "GUI Library"; size=size or UDim2.new(0,600,0,400)
+    iconAsset = iconAsset or GuiLibrary.Icon  -- fall back to the global icon property
 
     local sg=Instance.new("ScreenGui"); sg.Name="GuiLibraryUI"
     sg.ResetOnSpawn=false; sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
