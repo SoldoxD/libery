@@ -40,6 +40,7 @@ local currentPlaceId     = tostring(game.PlaceId)
 local elementSetters     = {}
 local elementCallbacks   = {}      -- maps frame -> user callback (for restore-time invocation)
 local dropdownLists      = {}      -- maps dropdown frame -> floating list (for theme recolor)
+local dropdownClosers    = {}      -- maps dropdown frame -> closeInstant fn (so tab-switch can close them)
 local restorationQueue   = {}
 local isInitializing     = false
 local activeInputConnections = {}
@@ -110,7 +111,13 @@ local function updateElementColors(window, instant)
     for tabName, tab in pairs(window.Tabs or {}) do
         if tab.Button then
             local isActive = window.CurrentTab == tabName
-            apply(tab.Button, {BackgroundColor3=isActive and COLORS.ACCENT or COLORS.HOVER, TextColor3=isActive and Color3.new(1,1,1) or COLORS.TEXT_MUTED})
+            if isActive then
+                apply(tab.Button,{BackgroundColor3=COLORS.ACCENT,BackgroundTransparency=0,TextColor3=Color3.new(1,1,1)})
+                local hl=tab.Button:FindFirstChild("TabHighlight"); if hl then apply(hl,{BackgroundTransparency=0.88}) end
+            else
+                apply(tab.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
+                local hl=tab.Button:FindFirstChild("TabHighlight"); if hl then apply(hl,{BackgroundTransparency=1}) end
+            end
         end
         if tab.Content then apply(tab.Content,{ScrollBarImageColor3=COLORS.ACCENT}) end
         for _, el in ipairs(tab.Elements or {}) do
@@ -608,7 +615,9 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     local function closeInstant()
         isOpen=false; dropArrow.Text="v"; dropList.Visible=false
         dropList.Size=UDim2.new(0,dropList.Size.X.Offset,0,0)
+        dropArrow.Rotation=0
     end
+    dropdownClosers[dropFrame]=closeInstant
 
     local function buildOptions(opts)
         for _,c in ipairs(dropList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
@@ -679,7 +688,10 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     elementCallbacks[dropFrame]=callback
 
     dropFrame.AncestryChanged:Connect(function()
-        if not dropFrame:IsDescendantOf(game) then dropdownLists[dropFrame]=nil end
+        if not dropFrame:IsDescendantOf(game) then
+            dropdownLists[dropFrame]=nil
+            dropdownClosers[dropFrame]=nil
+        end
     end)
 
     local eid=dropFrame:GetAttribute("ElementID")
@@ -1222,6 +1234,8 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     local iconImg=Instance.new("ImageLabel"); iconImg.Name="WindowIcon"
     iconImg.Size=UDim2.new(0,22,0,22); iconImg.Position=UDim2.new(0,60,0.5,-11)
     iconImg.BackgroundTransparency=1; iconImg.Image=""; iconImg.Visible=false
+    iconImg.ImageColor3=Color3.new(1,1,1); iconImg.ImageTransparency=0
+    iconImg.ScaleType=Enum.ScaleType.Fit; iconImg.ZIndex=5
     iconImg.Parent=tb
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Name="TitleLabel"
@@ -1231,14 +1245,20 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=tb
 
     local function setIcon(asset)
-        if not asset or asset=="" then
+        if asset==nil or asset==false or asset=="" or asset==0 then
             iconImg.Visible=false; iconImg.Image=""
             titleLbl.Position=UDim2.new(0,60,0,0)
             return
         end
-        if type(asset)=="number" then asset="rbxassetid://"..tostring(asset)
-        elseif type(asset)=="string" and not asset:find("://") then asset="rbxassetid://"..asset end
-        iconImg.Image=asset; iconImg.Visible=true
+        if type(asset)=="number" then
+            asset="rbxassetid://"..tostring(asset)
+        elseif type(asset)=="string" and not asset:find("://",1,true) then
+            asset="rbxassetid://"..asset
+        end
+        iconImg.Image=asset
+        iconImg.ImageTransparency=0
+        iconImg.ImageColor3=Color3.new(1,1,1)
+        iconImg.Visible=true
         titleLbl.Position=UDim2.new(0,88,0,0)
     end
     if iconAsset then setIcon(iconAsset) end
@@ -1430,6 +1450,8 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     -- ── Unified tab switcher with slide animation ──────────────
     local function switchToTab(targetName)
         if window.CurrentTab==targetName then return end
+        -- Close any open dropdown lists before animating away
+        for _,closer in pairs(dropdownClosers) do pcall(closer) end
         local target=window.Tabs[targetName]; if not target then return end
         local prev=window.CurrentTab and window.Tabs[window.CurrentTab] or nil
         local goingRight=true
@@ -1438,7 +1460,11 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         local inX  = goingRight and 1 or -1
 
         if prev and prev.Content then
-            if prev.Button then createTween(prev.Button,{BackgroundColor3=COLORS.HOVER,TextColor3=COLORS.TEXT_MUTED}) end
+            if prev.Button then
+                createTween(prev.Button,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
+                local hl=prev.Button:FindFirstChild("TabHighlight")
+                if hl then createTween(hl,{BackgroundTransparency=1}) end
+            end
             local pc=prev.Content
             createTween(pc,{Position=UDim2.new(outX,0,0,0)},ANIM_TIME)
             local nm=prev.Name
@@ -1447,7 +1473,11 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
             end)
         end
         window.CurrentTab=targetName
-        if target.Button then createTween(target.Button,{BackgroundColor3=COLORS.ACCENT,TextColor3=Color3.new(1,1,1)}) end
+        if target.Button then
+            createTween(target.Button,{BackgroundColor3=COLORS.ACCENT,BackgroundTransparency=0,TextColor3=Color3.new(1,1,1)})
+            local hl=target.Button:FindFirstChild("TabHighlight")
+            if hl then createTween(hl,{BackgroundTransparency=0.88}) end
+        end
         target.Content.Position=UDim2.new(inX,0,0,0)
         target.Content.Visible=true
         createTween(target.Content,{Position=UDim2.new(0,0,0,0)},ANIM_TIME)
@@ -1511,7 +1541,7 @@ function GuiLibrary:CreateTab(window, name)
     -- Auto-size width based on the text, fixed height 30 (tab bar is 34 tall internally)
     tabBtn.AutomaticSize=Enum.AutomaticSize.X
     tabBtn.Size=UDim2.new(0,0,0,30)
-    tabBtn.BackgroundColor3=COLORS.HOVER
+    tabBtn.BackgroundColor3=COLORS.HOVER; tabBtn.BackgroundTransparency=1
     tabBtn.Text=name; tabBtn.TextColor3=COLORS.TEXT_MUTED; tabBtn.TextSize=12
     tabBtn.Font=Enum.Font.GothamBold; tabBtn.BorderSizePixel=0; tabBtn.AutoButtonColor=false
     tabBtn.TextXAlignment=Enum.TextXAlignment.Center
@@ -1519,6 +1549,11 @@ function GuiLibrary:CreateTab(window, name)
     -- Internal padding so the text doesn't touch the rounded edges
     local pad=Instance.new("UIPadding"); pad.PaddingLeft=UDim.new(0,16); pad.PaddingRight=UDim.new(0,16)
     pad.Parent=tabBtn
+    -- Inner gloss overlay — visible only when tab is active
+    local tabHl=Instance.new("Frame"); tabHl.Name="TabHighlight"
+    tabHl.Size=UDim2.new(1,0,0.45,0); tabHl.BackgroundColor3=Color3.new(1,1,1)
+    tabHl.BackgroundTransparency=1; tabHl.BorderSizePixel=0; tabHl.ZIndex=2; tabHl.Parent=tabBtn
+    createCorner(tabHl,8)
     -- Force canvas update for horizontal scroll
     task.defer(function()
         local tc=window.TabsContainer; if tc then
@@ -1551,12 +1586,22 @@ function GuiLibrary:CreateTab(window, name)
     tabBtn.MouseButton1Click:Connect(function()
         if window.SwitchTab then window.SwitchTab(name) end
     end)
-    tabBtn.MouseEnter:Connect(function() if window.CurrentTab~=name then createTween(tabBtn,{BackgroundColor3=COLORS.BORDER}) end end)
-    tabBtn.MouseLeave:Connect(function() if window.CurrentTab~=name then createTween(tabBtn,{BackgroundColor3=COLORS.HOVER}) end end)
+    tabBtn.MouseEnter:Connect(function()
+        if window.CurrentTab~=name then
+            createTween(tabBtn,{BackgroundColor3=COLORS.HOVER,BackgroundTransparency=0.35,TextColor3=COLORS.TEXT})
+        end
+    end)
+    tabBtn.MouseLeave:Connect(function()
+        if window.CurrentTab~=name then
+            createTween(tabBtn,{BackgroundTransparency=1,TextColor3=COLORS.TEXT_MUTED})
+        end
+    end)
 
     if not window.CurrentTab then
         window.CurrentTab=name
-        createTween(tabBtn,{BackgroundColor3=COLORS.ACCENT,TextColor3=Color3.new(1,1,1)})
+        tabBtn.BackgroundColor3=COLORS.ACCENT; tabBtn.BackgroundTransparency=0
+        tabBtn.TextColor3=Color3.new(1,1,1)
+        local hl=tabBtn:FindFirstChild("TabHighlight"); if hl then hl.BackgroundTransparency=0.88 end
         tabScroll.Visible=true
     end
 
