@@ -1248,9 +1248,16 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
             return
         end
         if type(asset)=="number" then
-            asset="rbxassetid://"..tostring(asset)
+            -- rbxthumb works for any asset type (decal, image, accessory, gamepass, etc.)
+            asset="rbxthumb://type=Asset&id="..tostring(asset).."&w=420&h=420"
         elseif type(asset)=="string" and not asset:find("://",1,true) then
-            asset="rbxassetid://"..asset
+            -- bare numeric string — same thumbnail approach
+            local numStr = asset:match("^%d+$")
+            if numStr then
+                asset="rbxthumb://type=Asset&id="..numStr.."&w=420&h=420"
+            else
+                asset="rbxassetid://"..asset
+            end
         end
         iconImg.Image=asset
         iconImg.ImageTransparency=0
