@@ -96,6 +96,17 @@ local function updateElementColors(window, instant)
         if cb then apply(cb,{BackgroundColor3=COLORS.DANGER}) end
     end
 
+    -- Tab bar panel + separator
+    local cf = window.MainFrame and window.MainFrame:FindFirstChild("ContentFrame")
+    if cf then
+        local tbar = cf:FindFirstChild("TabBar")
+        if tbar then
+            apply(tbar, {BackgroundColor3=COLORS.SECONDARY})
+            local sep = tbar:FindFirstChild("TabBarSeparator")
+            if sep then apply(sep, {BackgroundColor3=COLORS.BORDER}) end
+        end
+    end
+
     for tabName, tab in pairs(window.Tabs or {}) do
         if tab.Button then
             local isActive = window.CurrentTab == tabName
@@ -1255,12 +1266,25 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
 
     -- ── Content ───────────────────────────────────────────────
     local contentFrame=Instance.new("Frame"); contentFrame.Name="ContentFrame"
-    contentFrame.Size=UDim2.new(1,-20,1,-60); contentFrame.Position=UDim2.new(0,10,0,52)
+    contentFrame.Size=UDim2.new(1,0,1,-46); contentFrame.Position=UDim2.new(0,0,0,46)
     contentFrame.BackgroundTransparency=1; contentFrame.Parent=mf
 
-    -- Horizontally scrollable tabs container
+    -- ── Tab bar panel (visually distinct from content) ──────────
+    local tabBar=Instance.new("Frame"); tabBar.Name="TabBar"
+    tabBar.Size=UDim2.new(1,0,0,42); tabBar.Position=UDim2.new(0,0,0,0)
+    tabBar.BackgroundColor3=COLORS.SECONDARY; tabBar.BorderSizePixel=0
+    tabBar.Parent=contentFrame
+
+    -- Separator line under the tab bar
+    local tabBarSep=Instance.new("Frame"); tabBarSep.Name="TabBarSeparator"
+    tabBarSep.Size=UDim2.new(1,0,0,1); tabBarSep.Position=UDim2.new(0,0,1,-1)
+    tabBarSep.BackgroundColor3=COLORS.BORDER; tabBarSep.BorderSizePixel=0
+    tabBarSep.Parent=tabBar
+
+    -- Horizontally scrollable tabs container (inside the tab bar panel)
     local tabsCont=Instance.new("ScrollingFrame"); tabsCont.Name="TabsContainer"
-    tabsCont.Size=UDim2.new(1,0,0,34); tabsCont.BackgroundTransparency=1
+    tabsCont.Size=UDim2.new(1,-20,1,-8); tabsCont.Position=UDim2.new(0,10,0,4)
+    tabsCont.BackgroundTransparency=1
     tabsCont.BorderSizePixel=0
     tabsCont.ScrollingDirection=Enum.ScrollingDirection.X
     tabsCont.ScrollBarThickness=0
@@ -1268,16 +1292,18 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     tabsCont.ClipsDescendants=true
     tabsCont.ScrollingEnabled=true
     tabsCont.Active=true
-    tabsCont.Parent=contentFrame
+    tabsCont.Parent=tabBar
     local tabsLayout=Instance.new("UIListLayout"); tabsLayout.FillDirection=Enum.FillDirection.Horizontal
-    tabsLayout.SortOrder=Enum.SortOrder.LayoutOrder; tabsLayout.Padding=UDim.new(0,4); tabsLayout.Parent=tabsCont
+    tabsLayout.SortOrder=Enum.SortOrder.LayoutOrder; tabsLayout.Padding=UDim.new(0,6)
+    tabsLayout.VerticalAlignment=Enum.VerticalAlignment.Center; tabsLayout.Parent=tabsCont
     -- Bind canvas size to actual layout content
     tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         tabsCont.CanvasSize = UDim2.new(0, tabsLayout.AbsoluteContentSize.X, 0, 0)
     end)
 
+    -- ── Content area below tab bar (slightly inset, with a flat bg) ──
     local tabContent=Instance.new("Frame"); tabContent.Name="TabContentContainer"
-    tabContent.Size=UDim2.new(1,0,1,-42); tabContent.Position=UDim2.new(0,0,0,42)
+    tabContent.Size=UDim2.new(1,-20,1,-50); tabContent.Position=UDim2.new(0,10,0,46)
     tabContent.BackgroundTransparency=1; tabContent.ClipsDescendants=true; tabContent.Parent=contentFrame
 
     -- ── Resize handle (bottom-right) ─────────────────────────
@@ -1482,11 +1508,17 @@ end
 
 function GuiLibrary:CreateTab(window, name)
     local tabBtn=Instance.new("TextButton"); tabBtn.Name=name.."Tab"
-    tabBtn.Size=UDim2.new(0,90,1,0); tabBtn.BackgroundColor3=COLORS.HOVER
+    -- Auto-size width based on the text, fixed height 30 (tab bar is 34 tall internally)
+    tabBtn.AutomaticSize=Enum.AutomaticSize.X
+    tabBtn.Size=UDim2.new(0,0,0,30)
+    tabBtn.BackgroundColor3=COLORS.HOVER
     tabBtn.Text=name; tabBtn.TextColor3=COLORS.TEXT_MUTED; tabBtn.TextSize=12
     tabBtn.Font=Enum.Font.GothamBold; tabBtn.BorderSizePixel=0; tabBtn.AutoButtonColor=false
-    tabBtn.TextTruncate=Enum.TextTruncate.AtEnd
+    tabBtn.TextXAlignment=Enum.TextXAlignment.Center
     tabBtn.Parent=window.TabsContainer; createCorner(tabBtn,8)
+    -- Internal padding so the text doesn't touch the rounded edges
+    local pad=Instance.new("UIPadding"); pad.PaddingLeft=UDim.new(0,16); pad.PaddingRight=UDim.new(0,16)
+    pad.Parent=tabBtn
     -- Force canvas update for horizontal scroll
     task.defer(function()
         local tc=window.TabsContainer; if tc then
