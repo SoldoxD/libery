@@ -378,7 +378,21 @@ function GuiLibrary:CreateButton(tab, text, callback)
     end)
     btn.MouseEnter:Connect(function() createTween(btn,{BackgroundColor3=accentLighter()}) end)
     btn.MouseLeave:Connect(function() createTween(btn,{BackgroundColor3=COLORS.ACCENT}) end)
-    table.insert(tab.Elements,btn); return btn
+    table.insert(tab.Elements,btn)
+
+    local api
+    api = {
+        Instance = btn,
+        Frame    = btn,
+        GetText  = function() return btn.Text end,
+        SetText  = function(newText)
+            btn.Text = tostring(newText or "")
+            return api
+        end,
+        SetCallback = function(cb) callback = cb; return api end,
+        SetVisible  = function(v) btn.Visible = v and true or false; return api end,
+    }
+    return api
 end
 
 function GuiLibrary:CreateToggle(tab, text, default, callback)
@@ -667,15 +681,39 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
 end
 
 function GuiLibrary:CreateLabel(tab, text)
+    text = text or ""
     local lbl=Instance.new("TextLabel"); lbl.Name=text.."Label"
     lbl.Size=UDim2.new(1,0,0,26); lbl.BackgroundTransparency=1; lbl.Text=text
     lbl.TextColor3=COLORS.TEXT_MUTED; lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=tab.Content
     local p=Instance.new("UIPadding"); p.PaddingLeft=UDim.new(0,14); p.Parent=lbl
-    table.insert(tab.Elements,lbl); return lbl
+    table.insert(tab.Elements,lbl)
+
+    -- Return a controller table so users can update the label dynamically.
+    -- Backwards-compatible: still exposes the underlying TextLabel via .Instance / .Frame.
+    local api
+    api = {
+        Instance = lbl,
+        Frame    = lbl,
+        GetText  = function() return lbl.Text end,
+        SetText  = function(newText)
+            lbl.Text = tostring(newText or "")
+            return api
+        end,
+        SetColor = function(c3)
+            if typeof(c3)=="Color3" then lbl.TextColor3 = c3 end
+            return api
+        end,
+        SetVisible = function(v)
+            lbl.Visible = v and true or false
+            return api
+        end,
+    }
+    return api
 end
 
 function GuiLibrary:CreateSection(tab, title)
+    title = title or ""
     local f=Instance.new("Frame"); f.Name=title.."Section"
     f.Size=UDim2.new(1,0,0,26); f.BackgroundTransparency=1; f.BorderSizePixel=0; f.Parent=tab.Content
 
@@ -688,7 +726,23 @@ function GuiLibrary:CreateSection(tab, title)
     lbl.TextColor3=COLORS.ACCENT; lbl.TextSize=10; lbl.Font=Enum.Font.GothamBold
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
 
-    table.insert(tab.Elements,f); return f
+    table.insert(tab.Elements,f)
+
+    local api
+    api = {
+        Instance = f,
+        Frame    = f,
+        GetText  = function() return lbl.Text end,
+        SetText  = function(newText)
+            lbl.Text = string.upper(tostring(newText or ""))
+            return api
+        end,
+        SetVisible = function(v)
+            f.Visible = v and true or false
+            return api
+        end,
+    }
+    return api
 end
 
 function GuiLibrary:CreateInput(tab, placeholder, callback)
