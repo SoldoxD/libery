@@ -18,7 +18,7 @@ local GuiLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/So
 ## Quick Start
 
 ```lua
-local GuiLibrary = loadstring(game:HttpGet("..."))()
+local GuiLibrary = loadstring(game:HttpGet("[...](https://raw.githubusercontent.com/SoldoxD/libery/refs/heads/main/main)"))()
 
 GuiLibrary.Icon = 105049082124083  -- optional default icon for every window
 
