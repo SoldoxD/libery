@@ -36,8 +36,8 @@ GuiLibrary.Icon = nil           -- set this before CreateWindow to use a default
 local function dprint(...) if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end end
 
 local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
-local autoSaveEnabled    = false
 local currentPlaceId     = tostring(game.PlaceId)
+local activeProfile      = "default"
 local elementSetters     = {}
 local elementCallbacks   = {}      -- maps frame -> user callback (for restore-time invocation)
 local dropdownLists      = {}      -- maps dropdown frame -> floating list (for theme recolor)
@@ -46,7 +46,79 @@ local restorationQueue   = {}
 local isInitializing     = false
 local activeInputConnections = {}
 
-local function getAutoSavePath() return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId .. ".json" end
+-- ── Profile-aware file paths ────────────────────────────────────────
+local function getPlaceFolder() return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId end
+local function getProfilePath(name) return getPlaceFolder() .. "/" .. name .. ".json" end
+local function getActivePointerPath() return getPlaceFolder() .. "/_active.txt" end
+local function getAutoSavePath() return getProfilePath(activeProfile) end  -- current profile's data file
+
+local function ensureProfileFolders()
+    pcall(function()
+        if not isfolder(AUTO_SAVE_FOLDER) then makefolder(AUTO_SAVE_FOLDER) end
+        if not isfolder(getPlaceFolder()) then makefolder(getPlaceFolder()) end
+    end)
+end
+
+local function listProfiles()
+    local out = {}
+    pcall(function()
+        if not isfolder(getPlaceFolder()) then return end
+        for _, fname in ipairs(listfiles(getPlaceFolder()) or {}) do
+            local n = tostring(fname):match("([^/\\]+)%.json$")
+            if n then table.insert(out, n) end
+        end
+    end)
+    table.sort(out)
+    if #out == 0 then table.insert(out, "default") end
+    return out
+end
+
+local function readActivePointer()
+    local name = nil
+    pcall(function()
+        if isfile(getActivePointerPath()) then
+            name = readfile(getActivePointerPath())
+            if name then name = (name:gsub("[%s\r\n]+$", ""):gsub("^[%s\r\n]+", "")) end
+        end
+    end)
+    if not name or name == "" then return nil end
+    return name
+end
+
+local function writeActivePointer(name)
+    ensureProfileFolders()
+    pcall(function() writefile(getActivePointerPath(), tostring(name or "default")) end)
+end
+
+-- One-time migration from the old flat layout (<placeId>.json) to <placeId>/default.json
+local function migrateOldFormatIfNeeded()
+    local oldPath = AUTO_SAVE_FOLDER .. "/" .. currentPlaceId .. ".json"
+    local newDefault = getProfilePath("default")
+    local oldExists, newExists = false, false
+    pcall(function() oldExists = isfile(oldPath) end)
+    pcall(function() newExists = isfile(newDefault) end)
+    if oldExists and not newExists then
+        ensureProfileFolders()
+        pcall(function()
+            local raw = readfile(oldPath)
+            writefile(newDefault, raw)
+            delfile(oldPath)
+        end)
+        dprint("Migrated old config to profile 'default'")
+    end
+end
+
+-- Resolve which profile to use: read the pointer if present, else "default"
+local function resolveActiveProfile()
+    migrateOldFormatIfNeeded()
+    local p = readActivePointer()
+    if p then activeProfile = p
+    else
+        activeProfile = "default"
+        ensureProfileFolders()
+        writeActivePointer("default")
+    end
+end
 
 local function countTable(t) local n=0; for _ in pairs(t or {}) do n=n+1 end; return n end
 
@@ -200,15 +272,12 @@ end
 -- ==================== CONFIG SYSTEM ====================
 
 local function saveConfig(window, force)
-    if not force and not autoSaveEnabled then return end
+    -- `force` retained for backward compat; saves always run now (profile system).
     if isInitializing then return end
     window = window or GuiLibrary.CurrentWindow
     if not window or not window.CurrentSize then return end
 
-    local ok = pcall(function()
-        if not isfolder(AUTO_SAVE_FOLDER) then makefolder(AUTO_SAVE_FOLDER) end
-    end)
-    if not ok then return end
+    ensureProfileFolders()
 
     local mfPos = window.MainFrame and window.MainFrame.Position or UDim2.new(0,0,0,0)
     local config = {
@@ -218,7 +287,6 @@ local function saveConfig(window, force)
         PosX               = mfPos.X.Offset,
         PosY               = mfPos.Y.Offset,
         AnimationsEnabled  = (ANIM_TIME>0.05),
-        AutoSaveEnabled    = autoSaveEnabled,
         NotificationsEnabled = GuiLibrary.NotificationsEnabled,
         NotificationDuration = GuiLibrary.NotificationDuration,
         LockPosition       = window.LockPosition or false,
@@ -260,8 +328,8 @@ local function saveConfig(window, force)
     local jsonStr = HttpService:JSONEncode(config)
     local wOk,wErr=pcall(function() writefile(getAutoSavePath(), jsonStr) end)
     if wOk then
-        dprint(string.format("Config saved → %s | autoSave=%s, components=%d, size=%dx%d, pos=(%d,%d)",
-            getAutoSavePath(), tostring(autoSaveEnabled), #config.Components,
+        dprint(string.format("Config saved → %s | profile=%s, components=%d, size=%dx%d, pos=(%d,%d)",
+            getAutoSavePath(), activeProfile, #config.Components,
             config.SizeWidth, config.SizeHeight, config.PosX, config.PosY))
     else
         warn("[GuiLibrary] Save failed: "..tostring(wErr))
@@ -271,17 +339,17 @@ GuiLibrary.SaveConfig = saveConfig
 
 local function loadConfig(window)
     if not window then dprint("loadConfig: no window"); return false end
+    resolveActiveProfile()  -- pick up active profile + migrate old format if needed
     local fileExists=false; pcall(function() fileExists=isfile(getAutoSavePath()) end)
-    dprint("loadConfig: path="..getAutoSavePath().." exists="..tostring(fileExists))
-    if not fileExists then dprint("No save file → using defaults"); return false end
+    dprint("loadConfig: profile="..activeProfile.." path="..getAutoSavePath().." exists="..tostring(fileExists))
+    if not fileExists then dprint("No profile file → using defaults"); return false end
     local rawData; pcall(function() rawData = readfile(getAutoSavePath()) end)
     dprint("loadConfig: raw bytes = "..(rawData and #rawData or 0))
     local rOk,config=pcall(function() return HttpService:JSONDecode(rawData) end)
     if not rOk or not config then warn("[GuiLibrary] JSON parse failed: "..tostring(config)); return false end
-    dprint(string.format("loadConfig: parsed | autoSave=%s, components=%d",
-        tostring(config.AutoSaveEnabled), config.Components and #config.Components or 0))
+    dprint(string.format("loadConfig: parsed | components=%d",
+        config.Components and #config.Components or 0))
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
-    if config.AutoSaveEnabled~=nil then autoSaveEnabled=config.AutoSaveEnabled==true end
     if config.NotificationsEnabled~=nil then GuiLibrary.NotificationsEnabled=config.NotificationsEnabled==true end
     if config.NotificationDuration then GuiLibrary.NotificationDuration=tonumber(config.NotificationDuration) or 3 end
     if config.LockPosition~=nil then window.LockPosition=config.LockPosition==true end
@@ -299,8 +367,7 @@ local function loadConfig(window)
         window.SavedPosition = UDim2.new(0, config.PosX, 0, config.PosY)
         if window.MainFrame then window.MainFrame.Position = window.SavedPosition end
     end
-    -- Restoration always happens if the config file exists, regardless of autoSaveEnabled.
-    -- autoSaveEnabled only controls whether changes are auto-saved on user interaction.
+    -- Profiles always restore from disk; saves are always automatic to the active profile.
     restorationQueue={}
     for _,entry in ipairs(config.Components or {}) do restorationQueue[entry.ID]=entry.Data end
     dprint("loadConfig: restorationQueue populated with "..(config.Components and #config.Components or 0).." entries")
@@ -323,18 +390,10 @@ local function loadConfig(window)
         end
     end
     dprint("loadConfig: restored "..restoredCount.." existing widgets, "..countTable(restorationQueue).." pending for late-created widgets")
-    if window.Tabs and window.Tabs.Settings then
-        for _,el in ipairs(window.Tabs.Settings.Elements or {}) do
-            if el.Name=="Auto Save ConfigToggle" then
-                local sf=elementSetters[el]; if sf then sf(autoSaveEnabled) end; break
-            end
-        end
-    end
     updateElementColors(window,true)
-    -- Defer notification so it doesn't fire during the loader
     task.delay(2, function()
-        local msg = autoSaveEnabled and "Settings restored. Auto-save ON." or "Settings restored. Auto-save OFF."
-        GuiLibrary:CreateNotification("Config Loaded", msg, 3, "success")
+        GuiLibrary:CreateNotification("Profile",
+            "Loaded profile '" .. activeProfile .. "'.", 3, "success")
     end)
     return true
 end
@@ -463,7 +522,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
 
     elementSetters[f]=function(v)
         setState(v)
-        -- Fire user callback so side-effects (e.g. autoSaveEnabled assignment, FPS visibility) re-apply on restore
+        -- Fire user callback so side-effects (FPS visibility, theme changes, etc.) re-apply on restore
         if callback then pcall(callback, v) end
     end
     if restorationQueue[eid] and restorationQueue[eid].Type=="Toggle" then
@@ -854,9 +913,9 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     local transparency=0  -- 0 = fully opaque, 1 = fully transparent
     local popOpen=false; local dragSV,dragHue,dragTran=false,false,false
 
-    -- Popup is wider now to fit the transparency slider on the right
+    -- Popup is wider now to fit the transparency slider on the right; extra height for the hex info bar
     local popup=Instance.new("Frame"); popup.Name="ColorPickerPopup"
-    popup.Size=UDim2.new(0,318,0,220); popup.Position=UDim2.new(0,0,0,baseH+4)
+    popup.Size=UDim2.new(0,318,0,236); popup.Position=UDim2.new(0,0,0,baseH+4)
     popup.BackgroundColor3=COLORS.PRIMARY; popup.Visible=false; popup.ClipsDescendants=false
     popup.ZIndex=200; popup.Parent=cf; createCorner(popup,10); createStroke(popup,1,COLORS.BORDER)
 
@@ -913,6 +972,19 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     tranMark.Position=UDim2.new(0,-2,0,-2); tranMark.AnchorPoint=Vector2.new(0,0.5)
     tranMark.BackgroundColor3=Color3.new(1,1,1); tranMark.BorderSizePixel=0; tranMark.ZIndex=203; tranMark.Parent=tranF; createCorner(tranMark,2)
 
+    -- Info bar at the bottom: shows hex code + alpha %
+    local infoBar=Instance.new("Frame"); infoBar.Size=UDim2.new(1,-20,0,20); infoBar.Position=UDim2.new(0,10,1,-24)
+    infoBar.BackgroundColor3=COLORS.HOVER; infoBar.BorderSizePixel=0; infoBar.ZIndex=205; infoBar.Parent=popup
+    createCorner(infoBar,5)
+    local hexLbl=Instance.new("TextLabel"); hexLbl.Size=UDim2.new(0.55,0,1,0); hexLbl.Position=UDim2.new(0,8,0,0)
+    hexLbl.BackgroundTransparency=1; hexLbl.Text="#FFFFFF"; hexLbl.TextColor3=COLORS.TEXT
+    hexLbl.TextSize=11; hexLbl.Font=Enum.Font.Code
+    hexLbl.TextXAlignment=Enum.TextXAlignment.Left; hexLbl.ZIndex=206; hexLbl.Parent=infoBar
+    local alphaLbl=Instance.new("TextLabel"); alphaLbl.Size=UDim2.new(0.45,-8,1,0); alphaLbl.Position=UDim2.new(0.55,0,0,0)
+    alphaLbl.BackgroundTransparency=1; alphaLbl.Text="α 100%"; alphaLbl.TextColor3=COLORS.TEXT_MUTED
+    alphaLbl.TextSize=11; alphaLbl.Font=Enum.Font.Code
+    alphaLbl.TextXAlignment=Enum.TextXAlignment.Right; alphaLbl.ZIndex=206; alphaLbl.Parent=infoBar
+
     local function updateMarkers()
         svMark.Position=UDim2.new(0,sat*svF.AbsoluteSize.X,0,(1-val)*svF.AbsoluteSize.Y)
         hueMark.Position=UDim2.new(0,-2,hue,-2)
@@ -928,6 +1000,9 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
         swatch.BackgroundColor3=curColor; swatch.BackgroundTransparency=transparency
         cf:SetAttribute("ColorValue",curColor); cf:SetAttribute("TransparencyValue",transparency)
         svF.BackgroundColor3=Color3.fromHSV(hue,1,1); tranC.BackgroundColor3=curColor
+        hexLbl.Text=string.format("#%02X%02X%02X",
+            math.floor(curColor.R*255+0.5), math.floor(curColor.G*255+0.5), math.floor(curColor.B*255+0.5))
+        alphaLbl.Text=string.format("α %d%%", math.floor((1-transparency)*100+0.5))
         updateMarkers()
         if callback then callback(curColor, transparency) end
         if not isInitializing then saveConfig(nil,false) end
@@ -1667,96 +1742,292 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
     }
 end
 
--- ── CreateColorGradient: simple ColorSequence editor with 2 stops ──
--- defaultStops = { Color3.fromRGB(...), Color3.fromRGB(...) }  -- start and end
+-- ── CreateColorGradient: 2-stop ColorSequence editor with full color pickers per stop ──
+-- defaultStops = { Color3, Color3 } OR { {color=Color3,transparency=number}, ... }
 function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateColorGradient: invalid tab"); return nil end
     defaultStops = defaultStops or { Color3.fromRGB(255,80,80), Color3.fromRGB(80,80,255) }
-    local startC = defaultStops[1] or Color3.fromRGB(255,80,80)
-    local endC   = defaultStops[2] or Color3.fromRGB(80,80,255)
+    local function normStop(v)
+        if typeof(v)=="Color3" then return {color=v, transparency=0} end
+        if type(v)=="table" then return {color=v.color or Color3.new(1,1,1), transparency=v.transparency or 0} end
+        return {color=Color3.new(1,1,1), transparency=0}
+    end
+    local stops = { normStop(defaultStops[1]), normStop(defaultStops[2]) }
+    local mf = GuiLibrary.CurrentWindow and GuiLibrary.CurrentWindow.MainFrame
 
     local f=Instance.new("Frame"); f.Name=label.."ColorGradient"
-    f.Size=UDim2.new(1,0,0,56); f.BackgroundColor3=COLORS.HOVER
+    f.Size=UDim2.new(1,0,0,76); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
 
-    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-110,0,16); lbl.Position=UDim2.new(0,10,0,4)
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-110,0,16); lbl.Position=UDim2.new(0,10,0,5)
     lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT
     lbl.TextSize=12; lbl.Font=Enum.Font.GothamBold
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
 
-    -- swatches on the right
-    local function mkSwatch(xPos, c)
-        local s=Instance.new("TextButton"); s.Size=UDim2.new(0,22,0,22); s.Position=UDim2.new(1,xPos,0,6)
-        s.BackgroundColor3=c; s.Text=""; s.BorderSizePixel=0; s.AutoButtonColor=false; s.Parent=f
-        createCorner(s,5); createStroke(s,1,COLORS.BORDER)
+    -- Two swatches on the right (start / end)
+    local function mkSwatch(xPos)
+        local s=Instance.new("TextButton"); s.Size=UDim2.new(0,26,0,26); s.Position=UDim2.new(1,xPos,0,6)
+        s.Text=""; s.BorderSizePixel=0; s.AutoButtonColor=false; s.Parent=f
+        createCorner(s,6); createStroke(s,1.5,COLORS.BORDER)
         return s
     end
-    local sw1=mkSwatch(-66, startC)
-    local sw2=mkSwatch(-32, endC)
+    local sw1=mkSwatch(-72)
+    local sw2=mkSwatch(-36)
 
-    -- gradient preview strip
-    local strip=Instance.new("Frame"); strip.Size=UDim2.new(1,-20,0,14); strip.Position=UDim2.new(0,10,1,-20)
-    strip.BackgroundColor3=Color3.new(1,1,1); strip.BorderSizePixel=0; strip.Parent=f; createCorner(strip,4)
-    local grad=Instance.new("UIGradient"); grad.Parent=strip
-    grad.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)})
+    -- Gradient preview strip
+    local strip=Instance.new("Frame"); strip.Size=UDim2.new(1,-20,0,14); strip.Position=UDim2.new(0,10,0,36)
+    strip.BackgroundColor3=Color3.fromRGB(180,180,180); strip.BorderSizePixel=0; strip.Parent=f; createCorner(strip,4)
+    local stripInner=Instance.new("Frame"); stripInner.Size=UDim2.new(1,0,1,0); stripInner.BackgroundColor3=Color3.new(1,1,1)
+    stripInner.BorderSizePixel=0; stripInner.Parent=strip; createCorner(stripInner,4)
+    local grad=Instance.new("UIGradient"); grad.Parent=stripInner
+
+    -- Hex info row at the bottom
+    local info=Instance.new("TextLabel"); info.Size=UDim2.new(1,-20,0,14); info.Position=UDim2.new(0,10,0,56)
+    info.BackgroundTransparency=1; info.TextColor3=COLORS.TEXT_MUTED
+    info.TextSize=10; info.Font=Enum.Font.Code
+    info.TextXAlignment=Enum.TextXAlignment.Left; info.Parent=f
+
+    local function hex(c) return string.format("#%02X%02X%02X",
+        math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5)) end
 
     local function emit()
-        sw1.BackgroundColor3=startC; sw2.BackgroundColor3=endC
-        local seq = ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)})
+        sw1.BackgroundColor3=stops[1].color; sw1.BackgroundTransparency=stops[1].transparency
+        sw2.BackgroundColor3=stops[2].color; sw2.BackgroundTransparency=stops[2].transparency
+        local seq = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, stops[1].color),
+            ColorSequenceKeypoint.new(1, stops[2].color),
+        })
         grad.Color = seq
+        grad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, stops[1].transparency),
+            NumberSequenceKeypoint.new(1, stops[2].transparency),
+        })
+        info.Text = string.format("Start %s α %d%%   →   End %s α %d%%",
+            hex(stops[1].color), math.floor((1-stops[1].transparency)*100+0.5),
+            hex(stops[2].color), math.floor((1-stops[2].transparency)*100+0.5))
         f:SetAttribute("ColorGradientValue", HttpService:JSONEncode({
-            {R=startC.R,G=startC.G,B=startC.B},
-            {R=endC.R,G=endC.G,B=endC.B},
+            {R=stops[1].color.R, G=stops[1].color.G, B=stops[1].color.B, T=stops[1].transparency},
+            {R=stops[2].color.R, G=stops[2].color.G, B=stops[2].color.B, T=stops[2].transparency},
         }))
-        if onChange then onChange(seq) end
+        if onChange then onChange(seq, grad.Transparency) end
         if not isInitializing then saveConfig(nil,false) end
     end
 
-    -- click swatch to cycle through some preset colors, or right-click to open a quick HSV-style chooser
-    local presets = {
-        Color3.fromRGB(255,80,80), Color3.fromRGB(255,165,0), Color3.fromRGB(255,255,0),
-        Color3.fromRGB(74,222,128), Color3.fromRGB(80,220,255), Color3.fromRGB(80,80,255),
-        Color3.fromRGB(180,80,255), Color3.fromRGB(255,255,255), Color3.fromRGB(0,0,0),
-    }
-    local function cycleColor(curC)
-        local idx = 1
-        for i,c in ipairs(presets) do
-            if math.abs(c.R-curC.R)<0.01 and math.abs(c.G-curC.G)<0.01 and math.abs(c.B-curC.B)<0.01 then idx=i; break end
+    -- ── Floating full color picker (shared between stops, lazy-built) ─────
+    local popup, popupCtl
+    local activeStopIdx = 1
+
+    local function buildPopup()
+        popup=Instance.new("Frame"); popup.Name="GradientStopPicker"
+        popup.Size=UDim2.new(0,318,0,236); popup.BackgroundColor3=COLORS.PRIMARY
+        popup.BorderSizePixel=0; popup.Visible=false; popup.ZIndex=800
+        popup.Parent = mf or f; createCorner(popup,10); createStroke(popup,1,COLORS.BORDER)
+
+        local hue,sat,val,transparency=0,1,1,0
+        local curColor=Color3.fromHSV(0,1,1)
+
+        local svF=Instance.new("Frame"); svF.Size=UDim2.new(0,184,0,184)
+        svF.Position=UDim2.new(0,10,0,10); svF.BackgroundColor3=Color3.fromHSV(hue,1,1)
+        svF.BorderSizePixel=0; svF.ZIndex=801; svF.Parent=popup; createCorner(svF,6)
+        local svW=Instance.new("Frame"); svW.Size=UDim2.new(1,0,1,0); svW.BackgroundColor3=Color3.new(1,1,1)
+        svW.BorderSizePixel=0; svW.ZIndex=802; svW.Parent=svF
+        local sg=Instance.new("UIGradient"); sg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}); sg.Parent=svW
+        local svB=Instance.new("Frame"); svB.Size=UDim2.new(1,0,1,0); svB.BackgroundColor3=Color3.new(0,0,0)
+        svB.BorderSizePixel=0; svB.ZIndex=803; svB.Parent=svF
+        local vg=Instance.new("UIGradient"); vg.Rotation=90
+        vg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.new(0,0,0)),ColorSequenceKeypoint.new(1,Color3.new(0,0,0))})
+        vg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}); vg.Parent=svB
+        local svMark=Instance.new("Frame"); svMark.Size=UDim2.new(0,12,0,12); svMark.AnchorPoint=Vector2.new(0.5,0.5)
+        svMark.BackgroundColor3=Color3.new(1,1,1); svMark.BorderSizePixel=0; svMark.ZIndex=804; svMark.Parent=svF
+        createCorner(svMark,6); createStroke(svMark,1.5,Color3.new(0,0,0))
+
+        local hueF=Instance.new("Frame"); hueF.Size=UDim2.new(0,18,0,184)
+        hueF.Position=UDim2.new(0,202,0,10); hueF.BorderSizePixel=0; hueF.ZIndex=801; hueF.Parent=popup; createCorner(hueF,6)
+        local hg=Instance.new("UIGradient"); hg.Rotation=90
+        hg.Color=ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Color3.fromRGB(255,0,0)),
+            ColorSequenceKeypoint.new(0.17,Color3.fromRGB(255,255,0)),
+            ColorSequenceKeypoint.new(0.33,Color3.fromRGB(0,255,0)),
+            ColorSequenceKeypoint.new(0.50,Color3.fromRGB(0,255,255)),
+            ColorSequenceKeypoint.new(0.67,Color3.fromRGB(0,0,255)),
+            ColorSequenceKeypoint.new(0.83,Color3.fromRGB(255,0,255)),
+            ColorSequenceKeypoint.new(1,   Color3.fromRGB(255,0,0)),
+        }); hg.Parent=hueF
+        local hueMark=Instance.new("Frame"); hueMark.Size=UDim2.new(1,4,0,4); hueMark.AnchorPoint=Vector2.new(0,0.5)
+        hueMark.BackgroundColor3=Color3.new(1,1,1); hueMark.BorderSizePixel=0; hueMark.ZIndex=802; hueMark.Parent=hueF; createCorner(hueMark,2)
+
+        local tranF=Instance.new("Frame"); tranF.Size=UDim2.new(0,18,0,184)
+        tranF.Position=UDim2.new(0,236,0,10); tranF.BackgroundColor3=Color3.fromRGB(180,180,180)
+        tranF.BorderSizePixel=0; tranF.ZIndex=801; tranF.Parent=popup; createCorner(tranF,6)
+        local tranC=Instance.new("Frame"); tranC.Size=UDim2.new(1,0,1,0); tranC.BackgroundColor3=curColor
+        tranC.BorderSizePixel=0; tranC.ZIndex=802; tranC.Parent=tranF; createCorner(tranC,6)
+        local tg=Instance.new("UIGradient"); tg.Rotation=90
+        tg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}); tg.Parent=tranC
+        local tranMark=Instance.new("Frame"); tranMark.Size=UDim2.new(1,4,0,4); tranMark.AnchorPoint=Vector2.new(0,0.5)
+        tranMark.BackgroundColor3=Color3.new(1,1,1); tranMark.BorderSizePixel=0; tranMark.ZIndex=803; tranMark.Parent=tranF; createCorner(tranMark,2)
+
+        -- RGB boxes on the bottom-left, hex+alpha on the right of the info bar
+        local function mkBox(lx, defVal)
+            local box=Instance.new("TextBox"); box.Size=UDim2.new(0,38,0,18); box.Position=UDim2.new(0,lx,0,200)
+            box.BackgroundColor3=COLORS.HOVER; box.Text=tostring(defVal); box.PlaceholderText="0-255"
+            box.PlaceholderColor3=COLORS.TEXT_MUTED; box.TextColor3=COLORS.TEXT; box.TextSize=11
+            box.Font=Enum.Font.GothamBold; box.TextXAlignment=Enum.TextXAlignment.Center
+            box.BorderSizePixel=0; box.ZIndex=805; box.Parent=popup; createCorner(box,4); return box
         end
-        return presets[(idx % #presets)+1]
+        local rBox=mkBox(10,255); local gBox=mkBox(54,255); local bBox=mkBox(98,255)
+
+        local hexLbl=Instance.new("TextLabel"); hexLbl.Size=UDim2.new(0,90,0,18); hexLbl.Position=UDim2.new(0,148,0,200)
+        hexLbl.BackgroundTransparency=1; hexLbl.Text="#FFFFFF"; hexLbl.TextColor3=COLORS.TEXT
+        hexLbl.TextSize=11; hexLbl.Font=Enum.Font.Code; hexLbl.ZIndex=805
+        hexLbl.TextXAlignment=Enum.TextXAlignment.Left; hexLbl.Parent=popup
+        local alphaLbl=Instance.new("TextLabel"); alphaLbl.Size=UDim2.new(0,70,0,18); alphaLbl.Position=UDim2.new(0,242,0,200)
+        alphaLbl.BackgroundTransparency=1; alphaLbl.Text="α 100%"; alphaLbl.TextColor3=COLORS.TEXT_MUTED
+        alphaLbl.TextSize=11; alphaLbl.Font=Enum.Font.Code; alphaLbl.ZIndex=805
+        alphaLbl.TextXAlignment=Enum.TextXAlignment.Right; alphaLbl.Parent=popup
+
+        local closeBtn=Instance.new("TextButton"); closeBtn.Size=UDim2.new(0,22,0,22); closeBtn.Position=UDim2.new(1,-28,0,6)
+        closeBtn.BackgroundColor3=COLORS.DANGER; closeBtn.BackgroundTransparency=0.4
+        closeBtn.Text="X"; closeBtn.TextColor3=Color3.new(1,1,1); closeBtn.TextSize=12
+        closeBtn.Font=Enum.Font.GothamBold; closeBtn.BorderSizePixel=0
+        closeBtn.AutoButtonColor=false; closeBtn.ZIndex=815; closeBtn.Parent=popup; createCorner(closeBtn,6)
+
+        local dragSV,dragHue,dragTran=false,false,false
+
+        local function updateMarkers()
+            svMark.Position=UDim2.new(0,sat*svF.AbsoluteSize.X,0,(1-val)*svF.AbsoluteSize.Y)
+            hueMark.Position=UDim2.new(0,-2,hue,-2)
+            tranMark.Position=UDim2.new(0,-2,transparency,-2)
+        end
+        local function applyHSV()
+            curColor=Color3.fromHSV(hue,sat,val)
+            rBox.Text=tostring(math.floor(curColor.R*255))
+            gBox.Text=tostring(math.floor(curColor.G*255))
+            bBox.Text=tostring(math.floor(curColor.B*255))
+            svF.BackgroundColor3=Color3.fromHSV(hue,1,1)
+            tranC.BackgroundColor3=curColor
+            hexLbl.Text=string.format("#%02X%02X%02X",
+                math.floor(curColor.R*255+0.5), math.floor(curColor.G*255+0.5), math.floor(curColor.B*255+0.5))
+            alphaLbl.Text=string.format("α %d%%", math.floor((1-transparency)*100+0.5))
+            updateMarkers()
+            -- write back to the active stop and update the gradient
+            stops[activeStopIdx].color = curColor
+            stops[activeStopIdx].transparency = transparency
+            emit()
+        end
+        local function setHSV(h,s,v,t)
+            hue=math.clamp(h or hue,0,1); sat=math.clamp(s or sat,0,1); val=math.clamp(v or val,0,1)
+            transparency=math.clamp(t or transparency,0,1)
+            applyHSV()
+        end
+        local function setColor(c, t)
+            if typeof(c)=="Color3" then curColor=c; hue,sat,val=Color3.toHSV(c) end
+            transparency = math.clamp(t or 0, 0, 1)
+            applyHSV()
+        end
+
+        local function sp(inp)
+            local p=(inp and inp.Position) and inp.Position or UserInputService:GetMouseLocation()
+            return typeof(p)=="Vector3" and Vector2.new(p.X,p.Y) or (typeof(p)=="Vector2" and p or UserInputService:GetMouseLocation())
+        end
+        svF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=true;local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+        svF.InputChanged:Connect(function(i) if dragSV and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+        svF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=false end end)
+        hueF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+        hueF.InputChanged:Connect(function(i) if dragHue and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+        hueF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=false end end)
+        tranF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+        tranF.InputChanged:Connect(function(i) if dragTran and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+        tranF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=false end end)
+
+        local function onRGB()
+            local r=math.clamp(tonumber(rBox.Text) or 0,0,255)
+            local g=math.clamp(tonumber(gBox.Text) or 0,0,255)
+            local b=math.clamp(tonumber(bBox.Text) or 0,0,255)
+            setColor(Color3.new(r/255,g/255,b/255), transparency)
+        end
+        rBox.FocusLost:Connect(onRGB); gBox.FocusLost:Connect(onRGB); bBox.FocusLost:Connect(onRGB)
+        closeBtn.MouseButton1Click:Connect(function() popup.Visible=false end)
+        closeBtn.MouseEnter:Connect(function() createTween(closeBtn,{BackgroundTransparency=0}) end)
+        closeBtn.MouseLeave:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.4}) end)
+
+        popupCtl = {SetColor=setColor, Frame=popup}
     end
-    sw1.MouseButton1Click:Connect(function() startC=cycleColor(startC); emit() end)
-    sw2.MouseButton1Click:Connect(function() endC=cycleColor(endC); emit() end)
+
+    local function showPopup(stopIdx)
+        activeStopIdx = stopIdx
+        if not popup then buildPopup() end
+        popupCtl.SetColor(stops[stopIdx].color, stops[stopIdx].transparency)
+        -- Position the popup just below the gradient widget, inside mainFrame
+        if mf then
+            local fAbs = f.AbsolutePosition; local mfAbs = mf.AbsolutePosition
+            local x = fAbs.X - mfAbs.X
+            local y = fAbs.Y - mfAbs.Y + f.AbsoluteSize.Y + 4
+            -- clamp so the popup fits in mainFrame
+            local maxX = mf.AbsoluteSize.X - popup.Size.X.Offset - 8
+            local maxY = mf.AbsoluteSize.Y - popup.Size.Y.Offset - 8
+            x = math.max(8, math.min(x, maxX))
+            y = math.max(8, math.min(y, maxY))
+            popup.Position = UDim2.new(0, x, 0, y)
+        end
+        popup.Visible = true
+    end
+
+    sw1.MouseButton1Click:Connect(function() showPopup(1) end)
+    sw2.MouseButton1Click:Connect(function() showPopup(2) end)
 
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..label:gsub("%s+","_").."_ColorGradient")
     f:SetAttribute("WidgetType","ColorGradient")
-    emit()  -- sets initial attribute
+    emit()  -- sets initial attribute + fires first onChange
 
-    local function setStops(s, e)
-        if typeof(s)=="Color3" then startC=s end
-        if typeof(e)=="Color3" then endC=e end
+    local function setStops(a, b)
+        if a then
+            if typeof(a)=="Color3" then stops[1].color=a
+            elseif type(a)=="table" then if a.color then stops[1].color=a.color end; if a.transparency then stops[1].transparency=a.transparency end end
+        end
+        if b then
+            if typeof(b)=="Color3" then stops[2].color=b
+            elseif type(b)=="table" then if b.color then stops[2].color=b.color end; if b.transparency then stops[2].transparency=b.transparency end end
+        end
         emit()
     end
 
     elementSetters[f]=function(v)
-        if type(v)=="table" and v[1] and v[2] then
-            local s=v[1]; local e=v[2]
-            local sc = (s.R and Color3.new(s.R,s.G,s.B)) or nil
-            local ec = (e.R and Color3.new(e.R,e.G,e.B)) or nil
-            if sc then startC=sc end; if ec then endC=ec end
-            emit()
+        if type(v)~="table" or not v[1] or not v[2] then return end
+        for i=1,2 do
+            local s=v[i]
+            if s and s.R~=nil and s.G~=nil and s.B~=nil then
+                stops[i].color = Color3.new(s.R, s.G, s.B)
+                stops[i].transparency = s.T or 0
+            end
         end
+        emit()
     end
     local eid=f:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="ColorGradient" then
         elementSetters[f](restorationQueue[eid].Value); restorationQueue[eid]=nil
     end
-    table.insert(tab.Elements,f)
 
+    -- Clean up the floating popup when the widget is destroyed
+    f.AncestryChanged:Connect(function()
+        if not f:IsDescendantOf(game) and popup then pcall(function() popup:Destroy() end) end
+    end)
+
+    table.insert(tab.Elements,f)
     return {
         Frame=f, Instance=f,
-        GetValue=function() return ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)}) end,
-        GetStops=function() return startC, endC end,
+        GetValue=function()
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0, stops[1].color),
+                ColorSequenceKeypoint.new(1, stops[2].color),
+            })
+        end,
+        GetTransparencySequence=function()
+            return NumberSequence.new({
+                NumberSequenceKeypoint.new(0, stops[1].transparency),
+                NumberSequenceKeypoint.new(1, stops[2].transparency),
+            })
+        end,
+        GetStops=function() return stops[1], stops[2] end,
         SetStops=setStops,
     }
 end
@@ -1824,137 +2095,6 @@ function GuiLibrary:CreateModal(title, body, buttons)
     backdrop.MouseButton1Click:Connect(close)
 
     return {ScreenGui=sg, Close=close}
-end
-
--- ── CreateProfile: named config-slot manager (Save / Load / Delete / New) ──
-local PROFILE_FOLDER = AUTO_SAVE_FOLDER .. "/profiles"
-local function profilePath(name) return PROFILE_FOLDER .. "/" .. name .. ".json" end
-
-local function listProfiles()
-    local out = {}
-    local ok = pcall(function()
-        if not isfolder(PROFILE_FOLDER) then return end
-        for _,fname in ipairs(listfiles(PROFILE_FOLDER) or {}) do
-            local n = fname:match("([^/\\]+)%.json$")
-            if n then table.insert(out, n) end
-        end
-    end)
-    if not ok then return {} end
-    table.sort(out)
-    return out
-end
-
-function GuiLibrary:CreateProfile(tab, label)
-    if not tab or not tab.Content then warn("[GuiLibrary] CreateProfile: invalid tab"); return nil end
-    label = label or "Profile"
-
-    local f=Instance.new("Frame"); f.Name=label.."Profile"
-    f.Size=UDim2.new(1,0,0,86); f.BackgroundColor3=COLORS.HOVER
-    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
-
-    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-20,0,16); lbl.Position=UDim2.new(0,10,0,5)
-    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT_MUTED
-    lbl.TextSize=11; lbl.Font=Enum.Font.GothamBold; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
-
-    -- name input + load-dropdown row
-    local nameBox=Instance.new("TextBox"); nameBox.Size=UDim2.new(0.55,-14,0,24); nameBox.Position=UDim2.new(0,10,0,24)
-    nameBox.BackgroundColor3=COLORS.PRIMARY; nameBox.Text=""
-    nameBox.PlaceholderText="profile name..."; nameBox.PlaceholderColor3=COLORS.TEXT_MUTED
-    nameBox.TextColor3=COLORS.TEXT; nameBox.TextSize=11; nameBox.Font=Enum.Font.Gotham
-    nameBox.TextXAlignment=Enum.TextXAlignment.Left; nameBox.BorderSizePixel=0
-    nameBox.ClearTextOnFocus=false; nameBox.Parent=f; createCorner(nameBox,5)
-    local np=Instance.new("UIPadding"); np.PaddingLeft=UDim.new(0,6); np.PaddingRight=UDim.new(0,6); np.Parent=nameBox
-
-    -- "Current:" label + value
-    local curLbl=Instance.new("TextLabel"); curLbl.Size=UDim2.new(0.45,-14,0,24); curLbl.Position=UDim2.new(0.55,10,0,24)
-    curLbl.BackgroundTransparency=1; curLbl.TextColor3=COLORS.TEXT_MUTED
-    curLbl.TextSize=11; curLbl.Font=Enum.Font.Gotham
-    curLbl.TextXAlignment=Enum.TextXAlignment.Left; curLbl.Parent=f
-
-    local function mkBtn(textVal, xPos, w, color)
-        local b=Instance.new("TextButton"); b.Size=UDim2.new(0,w,0,24); b.Position=UDim2.new(0,xPos,0,54)
-        b.BackgroundColor3=color; b.Text=textVal; b.TextColor3=Color3.new(1,1,1)
-        b.TextSize=11; b.Font=Enum.Font.GothamBold; b.BorderSizePixel=0
-        b.AutoButtonColor=false; b.Parent=f; createCorner(b,5)
-        b.MouseEnter:Connect(function() createTween(b,{BackgroundTransparency=0.15}) end)
-        b.MouseLeave:Connect(function() createTween(b,{BackgroundTransparency=0}) end)
-        return b
-    end
-    local saveBtn = mkBtn("Save",   10,  60, COLORS.ACCENT)
-    local loadBtn = mkBtn("Load",   76,  60, COLORS.HOVER)
-    local delBtn  = mkBtn("Delete", 142, 64, COLORS.DANGER)
-
-    local currentName = nil
-    local function refreshCur() curLbl.Text = "Current: " .. (currentName or "—") end
-    refreshCur()
-
-    local function ensureFolder()
-        pcall(function()
-            if not isfolder(AUTO_SAVE_FOLDER) then makefolder(AUTO_SAVE_FOLDER) end
-            if not isfolder(PROFILE_FOLDER) then makefolder(PROFILE_FOLDER) end
-        end)
-    end
-
-    saveBtn.MouseButton1Click:Connect(function()
-        local name = nameBox.Text
-        if not name or name=="" then
-            GuiLibrary:CreateNotification("Profile","Enter a name first.",2,"warning"); return
-        end
-        ensureFolder()
-        -- write a snapshot of the current auto-save file (just-saved state) to the profile file
-        saveConfig(nil, true)
-        local ok, raw = pcall(function() return readfile(getAutoSavePath()) end)
-        if ok and raw then
-            pcall(function() writefile(profilePath(name), raw) end)
-            currentName = name; refreshCur()
-            GuiLibrary:CreateNotification("Profile", "Saved profile '"..name.."'.", 2, "success")
-        else
-            GuiLibrary:CreateNotification("Profile","Save failed.",2,"error")
-        end
-    end)
-
-    loadBtn.MouseButton1Click:Connect(function()
-        local name = nameBox.Text
-        if not name or name=="" then
-            GuiLibrary:CreateNotification("Profile","Enter a name to load.",2,"warning"); return
-        end
-        local ok, raw = pcall(function() return readfile(profilePath(name)) end)
-        if not ok or not raw then
-            GuiLibrary:CreateNotification("Profile","Profile '"..name.."' not found.",2,"error"); return
-        end
-        pcall(function() writefile(getAutoSavePath(), raw) end)
-        currentName = name; refreshCur()
-        GuiLibrary:CreateNotification("Profile",
-            "Loaded '"..name.."'. Reload the GUI for changes to fully apply.", 4, "info")
-        if GuiLibrary.CurrentWindow then pcall(function() GuiLibrary.LoadConfig(GuiLibrary.CurrentWindow) end) end
-    end)
-
-    delBtn.MouseButton1Click:Connect(function()
-        local name = nameBox.Text
-        if not name or name=="" then
-            GuiLibrary:CreateNotification("Profile","Enter a name to delete.",2,"warning"); return
-        end
-        GuiLibrary:CreateModal("Delete profile?",
-            "Delete profile '"..name.."'? This cannot be undone.",
-            {
-                {text="Cancel", style="ghost"},
-                {text="Delete", style="danger", callback=function()
-                    pcall(function() delfile(profilePath(name)) end)
-                    if currentName==name then currentName=nil; refreshCur() end
-                    GuiLibrary:CreateNotification("Profile","Deleted '"..name.."'.",2,"info")
-                end},
-            })
-    end)
-
-    table.insert(tab.Elements,f)
-    return {
-        Frame=f, Instance=f,
-        List=listProfiles,
-        Save=function(n) nameBox.Text=n or ""; saveBtn.MouseButton1Click:Fire() end,
-        Load=function(n) nameBox.Text=n or ""; loadBtn.MouseButton1Click:Fire() end,
-        Delete=function(n) nameBox.Text=n or ""; delBtn.MouseButton1Click:Fire() end,
-        GetCurrent=function() return currentName end,
-    }
 end
 
 -- ==================== NOTIFICATIONS (stacked) ====================
@@ -2069,15 +2209,6 @@ function GuiLibrary:CreateSettingsTab(window)
     end)
 
     GuiLibrary:CreateSection(settingsTab,"Preferences")
-    GuiLibrary:CreateToggle(settingsTab,"Auto Save Config",autoSaveEnabled,function(state)
-        autoSaveEnabled=state
-        -- Always force-save the AutoSaveEnabled state (even if isInitializing handler is running on user toggle)
-        if not isInitializing then
-            saveConfig(nil,true)
-            if state then GuiLibrary:CreateNotification("Auto Save","Saves automatically",3,"success")
-            else GuiLibrary:CreateNotification("Auto Save","Disabled",2,"info") end
-        end
-    end)
     GuiLibrary:CreateToggle(settingsTab,"Enable Animations",true,function(state)
         ANIM_TIME=state and 0.25 or 0.01
         if not isInitializing then saveConfig(nil,false) end
@@ -2113,21 +2244,128 @@ function GuiLibrary:CreateSettingsTab(window)
         if not isInitializing then saveConfig(nil,false) end
     end)
 
-    GuiLibrary:CreateSection(settingsTab,"Actions")
-    GuiLibrary:CreateButton(settingsTab,"Save Config Now",function()
-        saveConfig(nil,true); GuiLibrary:CreateNotification("Config","Saved!",2,"success")
+    -- ── Profile management ──────────────────────────────────────────
+    GuiLibrary:CreateSection(settingsTab,"Profiles")
+
+    local profileNameInput   -- forward declarations so widgets can reference each other
+    local profileDropdown
+
+    profileNameInput = GuiLibrary:CreateInput(settingsTab,
+        "Profile name (e.g. rage, legit, exploration)...", function(text) end)
+
+    -- Build the dropdown after Input is created (so its callback can call the dropdown's setter)
+    profileDropdown = GuiLibrary:CreateDropdown(settingsTab, "Active Profile",
+        listProfiles(),
+        function(name)
+            if not name or name == activeProfile or name == "(no profiles)" then return end
+            -- Switch active profile and reload its values
+            activeProfile = name
+            writeActivePointer(name)
+            if not isInitializing then
+                pcall(function() GuiLibrary.LoadConfig(window) end)
+                GuiLibrary:CreateNotification("Profile",
+                    "Switched to '" .. name .. "'.", 2, "info")
+            end
+        end)
+    -- Pre-select the currently-active profile in the dropdown
+    pcall(function() profileDropdown.SetValue(activeProfile) end)
+
+    GuiLibrary:CreateButton(settingsTab,"New Profile (from input)",function()
+        local name = profileNameInput.GetValue()
+        if not name or name == "" then
+            GuiLibrary:CreateNotification("Profile","Enter a name first.",2,"warning"); return
+        end
+        if isfile and pcall(function() return isfile(getProfilePath(name)) end) and isfile(getProfilePath(name)) then
+            GuiLibrary:CreateNotification("Profile","Profile '"..name.."' already exists.",2,"warning"); return
+        end
+        ensureProfileFolders()
+        -- Save the current window state under the new name
+        local previous = activeProfile
+        activeProfile = name
+        writeActivePointer(name)
+        saveConfig(nil, true)
+        profileDropdown.UpdateOptions(listProfiles(), false)
+        profileDropdown.SetValue(name)
+        GuiLibrary:CreateNotification("Profile",
+            "Created '" .. name .. "' from current state.", 2, "success")
     end)
-    GuiLibrary:CreateButton(settingsTab,"Clear Save File",function()
-        local ok=pcall(function() if isfile(getAutoSavePath()) then delfile(getAutoSavePath()) end end)
-        if ok then GuiLibrary:CreateNotification("Save File","Cleared. Reload script to start fresh.",3,"warning")
-        else GuiLibrary:CreateNotification("Save File","Failed to clear",2,"error") end
+
+    GuiLibrary:CreateButton(settingsTab,"Rename Active Profile",function()
+        local newName = profileNameInput.GetValue()
+        if not newName or newName == "" then
+            GuiLibrary:CreateNotification("Profile","Enter a new name first.",2,"warning"); return
+        end
+        if newName == activeProfile then
+            GuiLibrary:CreateNotification("Profile","New name matches the current one.",2,"warning"); return
+        end
+        local oldPath = getProfilePath(activeProfile)
+        local newPath = getProfilePath(newName)
+        local ok = pcall(function()
+            local raw = readfile(oldPath)
+            writefile(newPath, raw)
+            delfile(oldPath)
+        end)
+        if not ok then
+            GuiLibrary:CreateNotification("Profile","Rename failed.",2,"error"); return
+        end
+        activeProfile = newName
+        writeActivePointer(newName)
+        profileDropdown.UpdateOptions(listProfiles(), false)
+        profileDropdown.SetValue(newName)
+        GuiLibrary:CreateNotification("Profile",
+            "Renamed to '" .. newName .. "'.", 2, "success")
     end)
-    GuiLibrary:CreateButton(settingsTab,"Reset Settings",function()
-        for k,c in pairs(themes["Dark"]) do COLORS[k]=c end
-        window.MainFrame.Size=UDim2.new(0,600,0,400); window.CurrentSize=UDim2.new(0,600,0,400)
-        ANIM_TIME=0.25; autoSaveEnabled=false; updateElementColors(window)
+
+    GuiLibrary:CreateButton(settingsTab,"Delete Active Profile",function()
+        local toDelete = activeProfile
+        local existing = listProfiles()
+        if #existing <= 1 then
+            GuiLibrary:CreateNotification("Profile",
+                "Can't delete the only profile.", 2, "warning"); return
+        end
+        GuiLibrary:CreateModal("Delete profile?",
+            "Permanently delete profile '" .. toDelete .. "'? This cannot be undone.",
+            {
+                {text="Cancel", style="ghost"},
+                {text="Delete", style="danger", callback=function()
+                    pcall(function() delfile(getProfilePath(toDelete)) end)
+                    -- Pick another profile to become active
+                    local remaining = listProfiles()
+                    local newActive = remaining[1] or "default"
+                    activeProfile = newActive
+                    writeActivePointer(newActive)
+                    profileDropdown.UpdateOptions(listProfiles(), false)
+                    profileDropdown.SetValue(newActive)
+                    pcall(function() GuiLibrary.LoadConfig(window) end)
+                    GuiLibrary:CreateNotification("Profile",
+                        "Deleted '" .. toDelete .. "'. Active: '" .. newActive .. "'.", 3, "info")
+                end},
+            })
+    end)
+
+    GuiLibrary:CreateButton(settingsTab,"Save Now",function()
         saveConfig(nil,true)
-        GuiLibrary:CreateNotification("Settings","Reset to defaults",2,"info")
+        GuiLibrary:CreateNotification("Profile",
+            "Saved '" .. activeProfile .. "'.", 2, "success")
+    end)
+
+    GuiLibrary:CreateButton(settingsTab,"Reset Active Profile",function()
+        GuiLibrary:CreateModal("Reset profile?",
+            "Reset '" .. activeProfile .. "' to defaults (Dark theme, default size/position, all widgets back to their built-in defaults)? This cannot be undone.",
+            {
+                {text="Cancel", style="ghost"},
+                {text="Reset",  style="danger", callback=function()
+                    for k,c in pairs(themes["Dark"]) do COLORS[k]=c end
+                    window.MainFrame.Size=UDim2.new(0,600,0,400)
+                    window.CurrentSize=UDim2.new(0,600,0,400)
+                    ANIM_TIME=0.25
+                    updateElementColors(window)
+                    pcall(function() delfile(getProfilePath(activeProfile)) end)
+                    saveConfig(nil, true)
+                    GuiLibrary:CreateNotification("Profile",
+                        "Reset '" .. activeProfile .. "' to defaults.", 2, "info")
+                end},
+            })
     end)
 end
 
