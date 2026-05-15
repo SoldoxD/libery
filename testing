@@ -246,7 +246,7 @@ local function saveConfig(window, force)
             if wt=="Toggle" then data={Type="Toggle",Value=el:GetAttribute("ToggleState")==1}
             elseif wt=="Slider" then data={Type="Slider",Value=el:GetAttribute("SliderValue") or 0}
             elseif wt=="Dropdown" then local v=el:GetAttribute("DropdownValue"); if v then data={Type="Dropdown",Value=v} end
-            elseif wt=="ColorPicker" then local v=el:GetAttribute("ColorValue"); if v then data={Type="ColorPicker",Value=typeof(v)=="Color3" and {R=v.R,G=v.G,B=v.B} or v} end
+            elseif wt=="ColorPicker" then local v=el:GetAttribute("ColorValue"); if v then local t=el:GetAttribute("TransparencyValue") or 0; data={Type="ColorPicker",Value=typeof(v)=="Color3" and {R=v.R,G=v.G,B=v.B,T=t} or v} end
             elseif wt=="Input" then local v=el:GetAttribute("InputValue"); if v then data={Type="Input",Value=v} end
             elseif wt=="Keybind" then local v=el:GetAttribute("KeybindValue"); if v and v~="None" then data={Type="Keybind",Value=v} end end
             if data then table.insert(config.Components,{ID=id,Data=data}) end
@@ -847,11 +847,12 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     end
 
     local curColor=dc; local hue,sat,val=Color3.toHSV(dc)
-    local popOpen=false; local dragSV,dragHue=false,false
+    local transparency=0  -- 0 = fully opaque, 1 = fully transparent
+    local popOpen=false; local dragSV,dragHue,dragTran=false,false,false
 
-    -- FIX: popup positioned at absolute y=baseH+4, INSIDE cf after expansion
+    -- Popup is wider now to fit the transparency slider on the right
     local popup=Instance.new("Frame"); popup.Name="ColorPickerPopup"
-    popup.Size=UDim2.new(0,284,0,220); popup.Position=UDim2.new(0,0,0,baseH+4)
+    popup.Size=UDim2.new(0,318,0,220); popup.Position=UDim2.new(0,0,0,baseH+4)
     popup.BackgroundColor3=COLORS.PRIMARY; popup.Visible=false; popup.ClipsDescendants=false
     popup.ZIndex=200; popup.Parent=cf; createCorner(popup,10); createStroke(popup,1,COLORS.BORDER)
 
@@ -891,28 +892,53 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     hueMark.Position=UDim2.new(0,-2,hue,-2); hueMark.AnchorPoint=Vector2.new(0,0.5)
     hueMark.BackgroundColor3=Color3.new(1,1,1); hueMark.BorderSizePixel=0; hueMark.ZIndex=202; hueMark.Parent=hueF; createCorner(hueMark,2)
 
+    -- Transparency strip (right of the hue strip). Top = opaque, bottom = fully transparent.
+    -- Gray base layer shows through the gradient at the "transparent" end.
+    local tranF=Instance.new("Frame"); tranF.Name="TranFrame"; tranF.Size=UDim2.new(0,18,0,184)
+    tranF.Position=UDim2.new(0,236,0,10); tranF.BackgroundColor3=Color3.fromRGB(180,180,180)
+    tranF.BorderSizePixel=0; tranF.ZIndex=201; tranF.Parent=popup; createCorner(tranF,6)
+
+    local tranC=Instance.new("Frame"); tranC.Name="TranColor"; tranC.Size=UDim2.new(1,0,1,0)
+    tranC.BackgroundColor3=curColor; tranC.BorderSizePixel=0; tranC.ZIndex=202; tranC.Parent=tranF
+    createCorner(tranC,6)
+    local tg=Instance.new("UIGradient"); tg.Rotation=90
+    tg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)})
+    tg.Parent=tranC
+
+    local tranMark=Instance.new("Frame"); tranMark.Size=UDim2.new(1,4,0,4)
+    tranMark.Position=UDim2.new(0,-2,0,-2); tranMark.AnchorPoint=Vector2.new(0,0.5)
+    tranMark.BackgroundColor3=Color3.new(1,1,1); tranMark.BorderSizePixel=0; tranMark.ZIndex=203; tranMark.Parent=tranF; createCorner(tranMark,2)
+
     local function updateMarkers()
         svMark.Position=UDim2.new(0,sat*svF.AbsoluteSize.X,0,(1-val)*svF.AbsoluteSize.Y)
         hueMark.Position=UDim2.new(0,-2,hue,-2)
+        tranMark.Position=UDim2.new(0,-2,transparency,-2)
     end
-    local function setHSV(h,s,v)
+    local function setHSV(h,s,v,t)
         hue=math.clamp(h or hue,0,1); sat=math.clamp(s or sat,0,1); val=math.clamp(v or val,0,1)
+        transparency=math.clamp(t or transparency,0,1)
         curColor=Color3.fromHSV(hue,sat,val)
         rBox.Text=tostring(math.floor(curColor.R*255))
         gBox.Text=tostring(math.floor(curColor.G*255))
         bBox.Text=tostring(math.floor(curColor.B*255))
-        swatch.BackgroundColor3=curColor; cf:SetAttribute("ColorValue",curColor)
-        svF.BackgroundColor3=Color3.fromHSV(hue,1,1); updateMarkers()
-        if callback then callback(curColor) end
+        swatch.BackgroundColor3=curColor; swatch.BackgroundTransparency=transparency
+        cf:SetAttribute("ColorValue",curColor); cf:SetAttribute("TransparencyValue",transparency)
+        svF.BackgroundColor3=Color3.fromHSV(hue,1,1); tranC.BackgroundColor3=curColor
+        updateMarkers()
+        if callback then callback(curColor, transparency) end
         if not isInitializing then saveConfig(nil,false) end
     end
-    local function setColor(inp)
+    local function setColor(inp, t)
         local c=nil
         if typeof(inp)=="Color3" then c=inp
-        elseif type(inp)=="table" and inp.R then c=Color3.new(inp.R,inp.G,inp.B) end
-        if c then curColor=c; hue,sat,val=Color3.toHSV(c); setHSV(hue,sat,val); return true end
+        elseif type(inp)=="table" and inp.R then
+            c=Color3.new(inp.R,inp.G,inp.B)
+            if t==nil and inp.T then t=inp.T end
+        end
+        if c then curColor=c; hue,sat,val=Color3.toHSV(c); setHSV(hue,sat,val,t); return true end
         return false
     end
+    local function setTransparency(t) setHSV(hue,sat,val,t) end
     local function sp(inp)
         local p=(inp and inp.Position) and inp.Position or UserInputService:GetMouseLocation()
         return typeof(p)=="Vector3" and Vector2.new(p.X,p.Y) or (typeof(p)=="Vector2" and p or UserInputService:GetMouseLocation())
@@ -923,6 +949,10 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     hueF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
     hueF.InputChanged:Connect(function(i) if dragHue and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
     hueF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=false end end)
+
+    tranF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+    tranF.InputChanged:Connect(function(i) if dragTran and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+    tranF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=false end end)
 
     local function onRGB()
         local r=math.clamp(tonumber(rBox.Text) or 0,0,255)
@@ -956,6 +986,7 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
 
     cf:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_ColorPicker")
     cf:SetAttribute("WidgetType","ColorPicker"); cf:SetAttribute("ColorValue",curColor)
+    cf:SetAttribute("TransparencyValue",transparency)
     elementSetters[cf]=setColor
     elementCallbacks[cf]=callback
     local eid=cf:GetAttribute("ElementID")
@@ -963,7 +994,13 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
         if setColor(restorationQueue[eid].Value) then restorationQueue[eid]=nil end
     end
     table.insert(tab.Elements,cf)
-    return {Frame=cf, GetValue=function() return curColor end, SetColor=setColor}
+    return {
+        Frame=cf,
+        GetValue=function() return curColor end,
+        GetTransparency=function() return transparency end,
+        SetColor=setColor,
+        SetTransparency=setTransparency,
+    }
 end
 
 function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
