@@ -248,7 +248,11 @@ local function saveConfig(window, force)
             elseif wt=="Dropdown" then local v=el:GetAttribute("DropdownValue"); if v then data={Type="Dropdown",Value=v} end
             elseif wt=="ColorPicker" then local v=el:GetAttribute("ColorValue"); if v then local t=el:GetAttribute("TransparencyValue") or 0; data={Type="ColorPicker",Value=typeof(v)=="Color3" and {R=v.R,G=v.G,B=v.B,T=t} or v} end
             elseif wt=="Input" then local v=el:GetAttribute("InputValue"); if v then data={Type="Input",Value=v} end
-            elseif wt=="Keybind" then local v=el:GetAttribute("KeybindValue"); if v and v~="None" then data={Type="Keybind",Value=v} end end
+            elseif wt=="Textbox" then local v=el:GetAttribute("TextboxValue"); if v then data={Type="Textbox",Value=v} end
+            elseif wt=="Keybind" then local v=el:GetAttribute("KeybindValue"); if v and v~="None" then data={Type="Keybind",Value=v} end
+            elseif wt=="MultiSelect" then local v=el:GetAttribute("MultiSelectValue"); if v then local ok,t=pcall(function() return HttpService:JSONDecode(v) end); if ok and type(t)=="table" then data={Type="MultiSelect",Value=t} end end
+            elseif wt=="BindGroup" then local v=el:GetAttribute("BindGroupValue"); if v then local ok,t=pcall(function() return HttpService:JSONDecode(v) end); if ok and type(t)=="table" then data={Type="BindGroup",Value=t} end end
+            elseif wt=="ColorGradient" then local v=el:GetAttribute("ColorGradientValue"); if v then local ok,t=pcall(function() return HttpService:JSONDecode(v) end); if ok and type(t)=="table" then data={Type="ColorGradient",Value=t} end end end
             if data then table.insert(config.Components,{ID=id,Data=data}) end
         end
     end
@@ -1003,6 +1007,32 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     }
 end
 
+-- Mouse-aware keybind helpers (used by CreateKeybind and CreateBindGroup)
+local MOUSE_INPUTS = {
+    [Enum.UserInputType.MouseButton1] = "MB1",
+    [Enum.UserInputType.MouseButton2] = "MB2",
+    [Enum.UserInputType.MouseButton3] = "MB3",
+}
+local function bindToString(b)
+    if not b then return "None" end
+    if b.type=="key" then return b.value.Name end
+    if b.type=="mouse" then return MOUSE_INPUTS[b.value] or "None" end
+    return "None"
+end
+local function stringToBind(s)
+    if not s or s=="" or s=="None" then return nil end
+    for ut,name in pairs(MOUSE_INPUTS) do if name==s then return {type="mouse",value=ut} end end
+    local ok, kc = pcall(function() return Enum.KeyCode[s] end)
+    if ok and kc then return {type="key",value=kc} end
+    return nil
+end
+local function matchesBind(b, inp)
+    if not b then return false end
+    if b.type=="key"   then return inp.UserInputType==Enum.UserInputType.Keyboard and inp.KeyCode==b.value end
+    if b.type=="mouse" then return inp.UserInputType==b.value end
+    return false
+end
+
 function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     local f=Instance.new("Frame"); f.Name=text.."Keybind"
     f.Size=UDim2.new(1,0,0,40); f.BackgroundColor3=COLORS.HOVER
@@ -1012,46 +1042,919 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     lbl.BackgroundTransparency=1; lbl.Text=text; lbl.TextColor3=COLORS.TEXT
     lbl.TextSize=13; lbl.Font=Enum.Font.Gotham; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
 
+    -- Normalize defaultKey: accepts Enum.KeyCode, Enum.UserInputType.MouseButton*, or nil
+    local curBind
+    if typeof(defaultKey)=="EnumItem" then
+        if defaultKey.EnumType==Enum.KeyCode then curBind={type="key",value=defaultKey}
+        elseif defaultKey.EnumType==Enum.UserInputType and MOUSE_INPUTS[defaultKey] then
+            curBind={type="mouse",value=defaultKey} end
+    end
+
     local kbBtn=Instance.new("TextButton"); kbBtn.Name="KeybindButton"
     kbBtn.Size=UDim2.new(0,72,0,26); kbBtn.Position=UDim2.new(1,-80,0.5,-13)
-    kbBtn.BackgroundColor3=COLORS.PRIMARY; kbBtn.Text=defaultKey and defaultKey.Name or "None"
+    kbBtn.BackgroundColor3=COLORS.PRIMARY; kbBtn.Text=bindToString(curBind)
     kbBtn.TextColor3=COLORS.TEXT; kbBtn.TextSize=11; kbBtn.Font=Enum.Font.GothamBold
     kbBtn.BorderSizePixel=0; kbBtn.AutoButtonColor=false; kbBtn.Parent=f
     createCorner(kbBtn,6); createStroke(kbBtn,1,COLORS.BORDER)
 
-    local curKey=defaultKey; local listening=false; local lastTrig=0
+    local listening=false; local lastTrig=0
+    local function commit()
+        kbBtn.Text=bindToString(curBind)
+        f:SetAttribute("KeybindValue",bindToString(curBind))
+    end
     local function setKeybind(v)
-        if v and Enum.KeyCode[v] then curKey=Enum.KeyCode[v]; kbBtn.Text=curKey.Name; f:SetAttribute("KeybindValue",curKey.Name); return true
-        elseif v=="None" or not v then curKey=nil; kbBtn.Text="None"; f:SetAttribute("KeybindValue","None"); return true end
+        -- accepts: nil, "None", KeyCode name string, "MB1"/"MB2"/"MB3", EnumItem
+        if v==nil or v==false or v=="None" or v=="" then curBind=nil; commit(); return true end
+        if typeof(v)=="EnumItem" then
+            if v.EnumType==Enum.KeyCode then curBind={type="key",value=v}; commit(); return true
+            elseif v.EnumType==Enum.UserInputType and MOUSE_INPUTS[v] then
+                curBind={type="mouse",value=v}; commit(); return true end
+            return false
+        end
+        if type(v)=="string" then
+            local b=stringToBind(v); if b then curBind=b; commit(); return true end
+        end
         return false
     end
+    commit()
+
     kbBtn.MouseButton1Click:Connect(function()
         if listening then return end; listening=true; kbBtn.Text="..."
         createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
         local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
             if gp then return end
+            local newBind
             if inp.UserInputType==Enum.UserInputType.Keyboard then
-                curKey=inp.KeyCode; kbBtn.Text=inp.KeyCode.Name; f:SetAttribute("KeybindValue",inp.KeyCode.Name)
-                listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
-                if conn then conn:Disconnect() end; saveConfig(nil,false)
+                if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
+                    newBind=nil  -- clear binding
+                else
+                    newBind={type="key",value=inp.KeyCode}
+                end
+            elseif MOUSE_INPUTS[inp.UserInputType] then
+                newBind={type="mouse",value=inp.UserInputType}
+            else
+                return
             end
+            curBind=newBind; commit()
+            listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
+            if conn then conn:Disconnect() end; saveConfig(nil,false)
         end)
     end)
     local kbConn=UserInputService.InputBegan:Connect(function(inp,gp)
         if gp or listening then return end
-        if tick()-lastTrig<0.2 then return end; lastTrig=tick()
-        if curKey and inp.KeyCode==curKey then if callback then callback() end end
+        if tick()-lastTrig<0.2 then return end
+        if matchesBind(curBind, inp) then lastTrig=tick(); if callback then callback() end end
     end); table.insert(activeInputConnections,kbConn)
 
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Keybind")
-    f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",curKey and curKey.Name or "None")
+    f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",bindToString(curBind))
     elementSetters[f]=function(v) if setKeybind(v) and not isInitializing then saveConfig(nil,false) end end
     local eid=f:GetAttribute("ElementID")
     if restorationQueue[eid] and restorationQueue[eid].Type=="Keybind" then
         if setKeybind(restorationQueue[eid].Value) then restorationQueue[eid]=nil end
     end
     table.insert(tab.Elements,f)
-    return {Frame=f, GetKey=function() return curKey end, SetKey=setKeybind}
+    return {
+        Frame=f,
+        GetKey=function() return curBind and curBind.type=="key" and curBind.value or nil end,
+        GetBind=function() return curBind and {type=curBind.type, value=curBind.value} or nil end,
+        SetKey=setKeybind,
+    }
+end
+
+-- ==================== EXTRA COMPONENTS ====================
+
+-- ── CreateTextbox: labeled text input with optional live-fire + validation ──
+-- opts = { live = bool, validate = fn(text)->bool, placeholder = string, password = bool }
+function GuiLibrary:CreateTextbox(tab, label, default, onChange, opts)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateTextbox: invalid tab"); return nil end
+    opts = opts or {}
+    local f=Instance.new("Frame"); f.Name=label.."Textbox"
+    f.Size=UDim2.new(1,0,0,52); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content
+    createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-20,0,16); lbl.Position=UDim2.new(0,10,0,5)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT_MUTED
+    lbl.TextSize=11; lbl.Font=Enum.Font.GothamBold
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
+
+    local box=Instance.new("TextBox"); box.Name="TextboxField"
+    box.Size=UDim2.new(1,-20,0,22); box.Position=UDim2.new(0,10,1,-26)
+    box.BackgroundColor3=COLORS.PRIMARY; box.Text=tostring(default or "")
+    box.PlaceholderText=opts.placeholder or ""; box.PlaceholderColor3=COLORS.TEXT_MUTED
+    box.TextColor3=COLORS.TEXT; box.TextSize=12; box.Font=Enum.Font.Gotham
+    box.TextXAlignment=Enum.TextXAlignment.Left; box.BorderSizePixel=0
+    box.ClearTextOnFocus=false; box.Parent=f; createCorner(box,5)
+    if opts.password then box.Text=string.rep("*", #box.Text) end
+    local bp=Instance.new("UIPadding"); bp.PaddingLeft=UDim.new(0,6); bp.PaddingRight=UDim.new(0,6); bp.Parent=box
+
+    local lastValid = box.Text
+    local function tryApply(text, fromKeystroke)
+        local accept = true
+        if opts.validate then accept = opts.validate(text) ~= false end
+        if accept and onChange then
+            local r = onChange(text)
+            if r==false then accept = false end
+        end
+        if accept then
+            lastValid = text
+            f:SetAttribute("TextboxValue", text)
+            if not isInitializing and not fromKeystroke then saveConfig(nil,false) end
+        else
+            if not fromKeystroke then box.Text = lastValid end
+        end
+    end
+
+    if opts.live then
+        box:GetPropertyChangedSignal("Text"):Connect(function() tryApply(box.Text, true) end)
+    end
+    box.FocusLost:Connect(function() tryApply(box.Text, false) end)
+
+    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..label:gsub("%s+","_").."_Textbox")
+    f:SetAttribute("WidgetType","Textbox"); f:SetAttribute("TextboxValue", box.Text)
+    elementSetters[f]=function(v) if type(v)=="string" then box.Text=v; tryApply(v, false) end end
+    local eid=f:GetAttribute("ElementID")
+    if restorationQueue[eid] and restorationQueue[eid].Type=="Textbox" then
+        box.Text=tostring(restorationQueue[eid].Value or ""); lastValid=box.Text
+        f:SetAttribute("TextboxValue", box.Text); restorationQueue[eid]=nil
+    end
+    table.insert(tab.Elements,f)
+
+    return {
+        Frame=f, Instance=f, TextBox=box,
+        GetValue=function() return box.Text end,
+        SetValue=function(v) if type(v)=="string" then box.Text=v; tryApply(v, false) end end,
+    }
+end
+
+-- ── CreateMultiSelect: dropdown that returns a set; click toggles each option ──
+function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateMultiSelect: invalid tab"); return nil end
+    local mf = GuiLibrary.CurrentWindow and GuiLibrary.CurrentWindow.MainFrame
+
+    local dropFrame=Instance.new("Frame"); dropFrame.Name=text.."MultiSelect"
+    dropFrame.Size=UDim2.new(1,0,0,40); dropFrame.BackgroundColor3=COLORS.HOVER
+    dropFrame.BorderSizePixel=0; dropFrame.Parent=tab.Content
+    createCorner(dropFrame,8); createStroke(dropFrame,1,COLORS.BORDER)
+
+    local dropBtn=Instance.new("TextButton"); dropBtn.Name="DropdownButton"
+    dropBtn.Size=UDim2.new(1,-16,0,28); dropBtn.Position=UDim2.new(0,8,0.5,-14)
+    dropBtn.BackgroundColor3=COLORS.PRIMARY; dropBtn.Text=""
+    dropBtn.BorderSizePixel=0; dropBtn.AutoButtonColor=false; dropBtn.ZIndex=2; dropBtn.Parent=dropFrame
+    createCorner(dropBtn,6)
+
+    local dropLbl=Instance.new("TextLabel"); dropLbl.Size=UDim2.new(1,-30,1,0); dropLbl.Position=UDim2.new(0,10,0,0)
+    dropLbl.BackgroundTransparency=1; dropLbl.TextColor3=COLORS.TEXT; dropLbl.TextSize=12; dropLbl.Font=Enum.Font.Gotham
+    dropLbl.TextXAlignment=Enum.TextXAlignment.Left; dropLbl.ZIndex=3; dropLbl.Parent=dropBtn
+
+    local dropArrow=Instance.new("TextLabel"); dropArrow.Size=UDim2.new(0,20,1,0); dropArrow.Position=UDim2.new(1,-22,0,0)
+    dropArrow.BackgroundTransparency=1; dropArrow.Text="v"; dropArrow.TextColor3=COLORS.TEXT_MUTED
+    dropArrow.TextSize=11; dropArrow.Font=Enum.Font.GothamBold; dropArrow.ZIndex=3; dropArrow.Parent=dropBtn
+
+    local dropList=Instance.new("ScrollingFrame"); dropList.Name="MultiSelectList_"..text
+    dropList.Size=UDim2.new(0,0,0,0); dropList.BackgroundColor3=COLORS.PRIMARY
+    dropList.Visible=false; dropList.ZIndex=600; dropList.ScrollBarThickness=4
+    dropList.ScrollBarImageColor3=COLORS.ACCENT; dropList.BorderSizePixel=0
+    dropList.Parent=mf or tab.Content; createCorner(dropList,8); createStroke(dropList,1,COLORS.BORDER)
+    dropdownLists[dropFrame]=dropList
+
+    local lp=Instance.new("UIListLayout"); lp.SortOrder=Enum.SortOrder.LayoutOrder; lp.Parent=dropList
+    local ldp=Instance.new("UIPadding"); ldp.PaddingTop=UDim.new(0,4); ldp.PaddingBottom=UDim.new(0,4)
+    ldp.PaddingLeft=UDim.new(0,4); ldp.PaddingRight=UDim.new(0,4); ldp.Parent=dropList
+
+    local curOpts={table.unpack(options)}
+    local selected={}; for _,o in ipairs(defaults or {}) do selected[o]=true end
+    local isOpen=false
+
+    local function summary()
+        local n=0; for _,v in pairs(selected) do if v then n=n+1 end end
+        if n==0 then return text..":  none"
+        elseif n<=3 then
+            local parts={}; for _,o in ipairs(curOpts) do if selected[o] then table.insert(parts,o) end end
+            return text..":  "..table.concat(parts,", ")
+        else return text..":  "..n.." selected" end
+    end
+    local function refreshLabel() dropLbl.Text=summary() end
+
+    local function getListRect()
+        local btnAbs=dropBtn.AbsolutePosition; local mfAbs=mf and mf.AbsolutePosition or Vector2.new(0,0)
+        local w=dropBtn.AbsoluteSize.X
+        local h=math.min(#curOpts*28+8, 200)
+        return btnAbs.X-mfAbs.X, btnAbs.Y-mfAbs.Y+dropBtn.AbsoluteSize.Y+6, w, h
+    end
+    local function closeInstant()
+        isOpen=false; dropArrow.Text="v"; dropArrow.Rotation=0
+        dropList.Visible=false; dropList.Size=UDim2.new(0,dropList.Size.X.Offset,0,0)
+    end
+    dropdownClosers[dropFrame]=closeInstant
+
+    local function buildOptions()
+        for _,c in ipairs(dropList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+        dropList.CanvasSize=UDim2.new(0,0,0,#curOpts*28+8)
+        for i,opt in ipairs(curOpts) do
+            local row=Instance.new("TextButton"); row.Size=UDim2.new(1,0,0,28)
+            row.BackgroundColor3=COLORS.ACCENT; row.BackgroundTransparency=1
+            row.Text=""; row.BorderSizePixel=0; row.LayoutOrder=i; row.ZIndex=601; row.Parent=dropList
+            createCorner(row,5)
+
+            local check=Instance.new("TextLabel"); check.Size=UDim2.new(0,18,0,18); check.Position=UDim2.new(0,6,0.5,-9)
+            check.BackgroundTransparency=1; check.Text=selected[opt] and "✓" or ""
+            check.TextColor3=COLORS.SUCCESS; check.TextSize=14; check.Font=Enum.Font.GothamBold
+            check.ZIndex=602; check.Parent=row
+
+            local rl=Instance.new("TextLabel"); rl.Size=UDim2.new(1,-32,1,0); rl.Position=UDim2.new(0,28,0,0)
+            rl.BackgroundTransparency=1; rl.Text=opt; rl.TextColor3=COLORS.TEXT_MUTED; rl.TextSize=12
+            rl.Font=Enum.Font.Gotham; rl.TextXAlignment=Enum.TextXAlignment.Left; rl.ZIndex=602; rl.Parent=row
+
+            row.MouseButton1Click:Connect(function()
+                selected[opt] = not selected[opt]
+                check.Text = selected[opt] and "✓" or ""
+                refreshLabel()
+                local snap={}; for k,v in pairs(selected) do if v then snap[k]=true end end
+                dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(snap))
+                if callback then callback(snap) end
+                if not isInitializing then saveConfig(nil,false) end
+            end)
+            row.MouseEnter:Connect(function() createTween(row,{BackgroundTransparency=0.82}); createTween(rl,{TextColor3=COLORS.TEXT}) end)
+            row.MouseLeave:Connect(function() createTween(row,{BackgroundTransparency=1}); createTween(rl,{TextColor3=COLORS.TEXT_MUTED}) end)
+        end
+    end
+    buildOptions(); refreshLabel()
+
+    dropBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        if isOpen then
+            local rx,ry,w,h=getListRect()
+            dropList.Position=UDim2.new(0,rx,0,ry); dropList.Size=UDim2.new(0,w,0,0)
+            dropList.CanvasSize=UDim2.new(0,0,0,#curOpts*28+8); dropList.Visible=true
+            createTween(dropArrow,{Rotation=180}); createTween(dropList,{Size=UDim2.new(0,w,0,h)})
+        else
+            createTween(dropArrow,{Rotation=0})
+            createTween(dropList,{Size=UDim2.new(0,dropList.Size.X.Offset,0,0)})
+            task.wait(ANIM_TIME); dropList.Visible=false
+        end
+    end)
+
+    dropFrame.AncestryChanged:Connect(function()
+        if not dropFrame:IsDescendantOf(game) then
+            pcall(function() dropList:Destroy() end)
+            dropdownLists[dropFrame]=nil; dropdownClosers[dropFrame]=nil
+        end
+    end)
+
+    local function setSel(v)
+        if type(v)~="table" then return false end
+        selected={}; for k,b in pairs(v) do if b then selected[k]=true end end
+        buildOptions(); refreshLabel()
+        dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(selected))
+        if callback then local snap={}; for k,b in pairs(selected) do if b then snap[k]=true end end; callback(snap) end
+        return true
+    end
+
+    local function updateOptions(newOpts, keepSel)
+        if isOpen then closeInstant() end
+        curOpts={table.unpack(newOpts)}
+        if not keepSel then selected={} end
+        buildOptions(); refreshLabel()
+    end
+
+    dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_MultiSelect")
+    dropFrame:SetAttribute("WidgetType","MultiSelect")
+    dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(selected))
+    elementSetters[dropFrame]=function(v) if setSel(v) and not isInitializing then saveConfig(nil,false) end end
+    local eid=dropFrame:GetAttribute("ElementID")
+    if restorationQueue[eid] and restorationQueue[eid].Type=="MultiSelect" then
+        setSel(restorationQueue[eid].Value); restorationQueue[eid]=nil
+    end
+    table.insert(tab.Elements, dropFrame)
+
+    return {
+        Frame=dropFrame, Instance=dropFrame,
+        GetValue=function() local snap={}; for k,b in pairs(selected) do if b then snap[k]=true end end; return snap end,
+        SetValue=setSel,
+        UpdateOptions=updateOptions,
+    }
+end
+
+-- ── CreateSearch: live-filtered scrollable list, results from a callback ──
+function GuiLibrary:CreateSearch(tab, placeholder, getItems, onPick)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateSearch: invalid tab"); return nil end
+    local rowH = 26
+    local maxRows = 6
+
+    local f=Instance.new("Frame"); f.Name="Search"
+    f.Size=UDim2.new(1,0,0,36+rowH*maxRows+8); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local box=Instance.new("TextBox"); box.Size=UDim2.new(1,-20,0,26); box.Position=UDim2.new(0,10,0,5)
+    box.BackgroundColor3=COLORS.PRIMARY; box.Text=""
+    box.PlaceholderText=placeholder or "Search..."; box.PlaceholderColor3=COLORS.TEXT_MUTED
+    box.TextColor3=COLORS.TEXT; box.TextSize=12; box.Font=Enum.Font.Gotham
+    box.TextXAlignment=Enum.TextXAlignment.Left; box.BorderSizePixel=0
+    box.ClearTextOnFocus=false; box.Parent=f; createCorner(box,5)
+    local bp=Instance.new("UIPadding"); bp.PaddingLeft=UDim.new(0,8); bp.PaddingRight=UDim.new(0,8); bp.Parent=box
+
+    local list=Instance.new("ScrollingFrame"); list.Size=UDim2.new(1,-16,1,-44); list.Position=UDim2.new(0,8,0,38)
+    list.BackgroundColor3=COLORS.PRIMARY; list.BorderSizePixel=0; list.ScrollBarThickness=3
+    list.ScrollBarImageColor3=COLORS.ACCENT; list.Parent=f; createCorner(list,6)
+    local ll=Instance.new("UIListLayout"); ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,2); ll.Parent=list
+    local lpp=Instance.new("UIPadding"); lpp.PaddingTop=UDim.new(0,4); lpp.PaddingLeft=UDim.new(0,4); lpp.PaddingRight=UDim.new(0,4); lpp.PaddingBottom=UDim.new(0,4); lpp.Parent=list
+
+    local function refresh()
+        for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+        local items = (getItems and getItems(box.Text)) or {}
+        local q = box.Text:lower()
+        local shown = {}
+        for _,item in ipairs(items) do
+            local name = type(item)=="string" and item or tostring(item.Name or item)
+            if q=="" or name:lower():find(q,1,true) then table.insert(shown,item) end
+        end
+        for i,item in ipairs(shown) do
+            local name = type(item)=="string" and item or tostring(item.Name or item)
+            local row=Instance.new("TextButton"); row.Size=UDim2.new(1,0,0,rowH-2)
+            row.BackgroundColor3=COLORS.HOVER; row.BackgroundTransparency=0.5
+            row.Text=""; row.BorderSizePixel=0; row.LayoutOrder=i; row.AutoButtonColor=false; row.Parent=list
+            createCorner(row,4)
+            local rl=Instance.new("TextLabel"); rl.Size=UDim2.new(1,-16,1,0); rl.Position=UDim2.new(0,10,0,0)
+            rl.BackgroundTransparency=1; rl.Text=name; rl.TextColor3=COLORS.TEXT; rl.TextSize=12
+            rl.Font=Enum.Font.Gotham; rl.TextXAlignment=Enum.TextXAlignment.Left; rl.Parent=row
+            row.MouseEnter:Connect(function() createTween(row,{BackgroundTransparency=0.2,BackgroundColor3=COLORS.ACCENT}) end)
+            row.MouseLeave:Connect(function() createTween(row,{BackgroundTransparency=0.5,BackgroundColor3=COLORS.HOVER}) end)
+            row.MouseButton1Click:Connect(function() if onPick then onPick(item) end end)
+        end
+        list.CanvasSize=UDim2.new(0,0,0,#shown*rowH+8)
+    end
+    box:GetPropertyChangedSignal("Text"):Connect(refresh)
+    refresh()
+
+    table.insert(tab.Elements,f)
+    return {Frame=f, Instance=f, Refresh=refresh, GetQuery=function() return box.Text end, SetQuery=function(q) box.Text=tostring(q or "") end}
+end
+
+-- ── CreateProgressBar: horizontal 0..1 bar, value polled from getValue() ──
+function GuiLibrary:CreateProgressBar(tab, label, getValue, opts)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateProgressBar: invalid tab"); return nil end
+    opts = opts or {}
+    local pollInterval = opts.interval or 0.1
+
+    local f=Instance.new("Frame"); f.Name=label.."ProgressBar"
+    f.Size=UDim2.new(1,0,0,44); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.6,-10,0,16); lbl.Position=UDim2.new(0,10,0,4)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT
+    lbl.TextSize=12; lbl.Font=Enum.Font.GothamBold
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
+
+    local valLbl=Instance.new("TextLabel"); valLbl.Size=UDim2.new(0.4,-10,0,16); valLbl.Position=UDim2.new(0.6,0,0,4)
+    valLbl.BackgroundTransparency=1; valLbl.Text="0%"; valLbl.TextColor3=COLORS.ACCENT
+    valLbl.TextSize=12; valLbl.Font=Enum.Font.GothamBold
+    valLbl.TextXAlignment=Enum.TextXAlignment.Right; valLbl.Parent=f
+
+    local track=Instance.new("Frame"); track.Name="ProgressTrack"
+    track.Size=UDim2.new(1,-20,0,8); track.Position=UDim2.new(0,10,1,-14)
+    track.BackgroundColor3=COLORS.BORDER; track.BorderSizePixel=0; track.Parent=f; createCorner(track,4)
+
+    local fill=Instance.new("Frame"); fill.Name="ProgressFill"
+    fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=COLORS.ACCENT
+    fill.BorderSizePixel=0; fill.Parent=track; createCorner(fill,4)
+
+    local running=true; local lastV = -1
+    task.spawn(function()
+        while running and f.Parent do
+            local ok, v = pcall(getValue)
+            if ok and type(v)=="number" then
+                v = math.clamp(v, 0, 1)
+                if math.abs(v - lastV) > 0.001 then
+                    fill.Size = UDim2.new(v, 0, 1, 0)
+                    valLbl.Text = string.format("%d%%", math.floor(v*100+0.5))
+                    lastV = v
+                end
+            end
+            task.wait(pollInterval)
+        end
+    end)
+    f.AncestryChanged:Connect(function() if not f:IsDescendantOf(game) then running=false end end)
+
+    table.insert(tab.Elements,f)
+    return {Frame=f, Instance=f, Stop=function() running=false end, Start=function()
+        if running then return end; running=true
+        task.spawn(function() while running and f.Parent do local ok,v=pcall(getValue); if ok and type(v)=="number" then v=math.clamp(v,0,1); fill.Size=UDim2.new(v,0,1,0); valLbl.Text=string.format("%d%%",math.floor(v*100+0.5)) end; task.wait(pollInterval) end end)
+    end, SetGetter=function(fn) getValue=fn end}
+end
+
+-- ── CreateGauge: same idea but with explicit min/max range ──
+function GuiLibrary:CreateGauge(tab, label, minVal, maxVal, getValue, opts)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateGauge: invalid tab"); return nil end
+    opts = opts or {}
+    local pollInterval = opts.interval or 0.1
+    local fmt = opts.format or "%.0f"
+
+    local f=Instance.new("Frame"); f.Name=label.."Gauge"
+    f.Size=UDim2.new(1,0,0,48); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.6,-10,0,16); lbl.Position=UDim2.new(0,10,0,4)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT
+    lbl.TextSize=12; lbl.Font=Enum.Font.GothamBold
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
+
+    local valLbl=Instance.new("TextLabel"); valLbl.Size=UDim2.new(0.4,-10,0,16); valLbl.Position=UDim2.new(0.6,0,0,4)
+    valLbl.BackgroundTransparency=1; valLbl.Text="-"; valLbl.TextColor3=COLORS.ACCENT
+    valLbl.TextSize=12; valLbl.Font=Enum.Font.GothamBold
+    valLbl.TextXAlignment=Enum.TextXAlignment.Right; valLbl.Parent=f
+
+    local track=Instance.new("Frame"); track.Size=UDim2.new(1,-20,0,6); track.Position=UDim2.new(0,10,1,-14)
+    track.BackgroundColor3=COLORS.BORDER; track.BorderSizePixel=0; track.Parent=f; createCorner(track,3)
+    local fill=Instance.new("Frame"); fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=COLORS.ACCENT
+    fill.BorderSizePixel=0; fill.Parent=track; createCorner(fill,3)
+
+    local minLbl=Instance.new("TextLabel"); minLbl.Size=UDim2.new(0,40,0,12); minLbl.Position=UDim2.new(0,10,1,-4)
+    minLbl.BackgroundTransparency=1; minLbl.Text=string.format(fmt,minVal); minLbl.TextColor3=COLORS.TEXT_MUTED
+    minLbl.TextSize=9; minLbl.Font=Enum.Font.Gotham; minLbl.TextXAlignment=Enum.TextXAlignment.Left; minLbl.Parent=f
+    local maxLbl=Instance.new("TextLabel"); maxLbl.Size=UDim2.new(0,40,0,12); maxLbl.Position=UDim2.new(1,-50,1,-4)
+    maxLbl.BackgroundTransparency=1; maxLbl.Text=string.format(fmt,maxVal); maxLbl.TextColor3=COLORS.TEXT_MUTED
+    maxLbl.TextSize=9; maxLbl.Font=Enum.Font.Gotham; maxLbl.TextXAlignment=Enum.TextXAlignment.Right; maxLbl.Parent=f
+
+    local running=true
+    task.spawn(function()
+        while running and f.Parent do
+            local ok, v = pcall(getValue)
+            if ok and type(v)=="number" then
+                local pct = math.clamp((v-minVal)/(maxVal-minVal), 0, 1)
+                fill.Size = UDim2.new(pct,0,1,0)
+                valLbl.Text = string.format(fmt, v)
+            end
+            task.wait(pollInterval)
+        end
+    end)
+    f.AncestryChanged:Connect(function() if not f:IsDescendantOf(game) then running=false end end)
+
+    table.insert(tab.Elements,f)
+    return {Frame=f, Instance=f, Stop=function() running=false end, SetGetter=function(fn) getValue=fn end}
+end
+
+-- ── CreatePlayerList: scrollable, auto-updates on PlayerAdded/Removed ──
+function GuiLibrary:CreatePlayerList(tab, onPickPlayer, opts)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreatePlayerList: invalid tab"); return nil end
+    opts = opts or {}
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    local includeLocal = opts.includeLocal == true
+    local rowH = 30; local maxRows = opts.maxRows or 6
+
+    local f=Instance.new("Frame"); f.Name="PlayerList"
+    f.Size=UDim2.new(1,0,0,rowH*maxRows+12); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local list=Instance.new("ScrollingFrame"); list.Size=UDim2.new(1,-12,1,-12); list.Position=UDim2.new(0,6,0,6)
+    list.BackgroundColor3=COLORS.PRIMARY; list.BorderSizePixel=0; list.ScrollBarThickness=3
+    list.ScrollBarImageColor3=COLORS.ACCENT; list.Parent=f; createCorner(list,6)
+    local ll=Instance.new("UIListLayout"); ll.SortOrder=Enum.SortOrder.Name; ll.Padding=UDim.new(0,2); ll.Parent=list
+    local lpp=Instance.new("UIPadding"); lpp.PaddingTop=UDim.new(0,4); lpp.PaddingLeft=UDim.new(0,4); lpp.PaddingRight=UDim.new(0,4); lpp.PaddingBottom=UDim.new(0,4); lpp.Parent=list
+
+    local function refresh()
+        for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+        local count=0
+        for _,p in ipairs(Players:GetPlayers()) do
+            if includeLocal or p~=LocalPlayer then
+                count = count + 1
+                local row=Instance.new("TextButton"); row.Name=p.Name; row.Size=UDim2.new(1,0,0,rowH-2)
+                row.BackgroundColor3=COLORS.HOVER; row.BackgroundTransparency=0.5
+                row.Text=""; row.BorderSizePixel=0; row.AutoButtonColor=false; row.Parent=list
+                createCorner(row,4)
+
+                local img=Instance.new("ImageLabel"); img.Size=UDim2.new(0,20,0,20); img.Position=UDim2.new(0,6,0.5,-10)
+                img.BackgroundTransparency=1; img.BorderSizePixel=0
+                img.Image=string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48", p.UserId)
+                img.Parent=row; createCorner(img,10)
+
+                local nm=Instance.new("TextLabel"); nm.Size=UDim2.new(1,-36,1,0); nm.Position=UDim2.new(0,32,0,0)
+                nm.BackgroundTransparency=1
+                nm.Text=p.DisplayName~=p.Name and (p.DisplayName.." (@"..p.Name..")") or p.Name
+                nm.TextColor3=COLORS.TEXT; nm.TextSize=12; nm.Font=Enum.Font.Gotham
+                nm.TextXAlignment=Enum.TextXAlignment.Left; nm.Parent=row
+
+                row.MouseEnter:Connect(function() createTween(row,{BackgroundTransparency=0.2,BackgroundColor3=COLORS.ACCENT}) end)
+                row.MouseLeave:Connect(function() createTween(row,{BackgroundTransparency=0.5,BackgroundColor3=COLORS.HOVER}) end)
+                row.MouseButton1Click:Connect(function() if onPickPlayer then onPickPlayer(p) end end)
+            end
+        end
+        list.CanvasSize=UDim2.new(0,0,0,count*rowH+8)
+    end
+    refresh()
+
+    local addConn = Players.PlayerAdded:Connect(refresh)
+    local remConn = Players.PlayerRemoving:Connect(refresh)
+    table.insert(activeInputConnections, addConn)
+    table.insert(activeInputConnections, remConn)
+    f.AncestryChanged:Connect(function()
+        if not f:IsDescendantOf(game) then
+            pcall(function() addConn:Disconnect() end); pcall(function() remConn:Disconnect() end)
+        end
+    end)
+
+    table.insert(tab.Elements,f)
+    return {Frame=f, Instance=f, Refresh=refresh}
+end
+
+-- ── CreateBindGroup: a labeled group of multiple keybinds in one widget ──
+-- list = { {label="Toggle ESP", default=Enum.KeyCode.E, callback=fn}, ... }
+function GuiLibrary:CreateBindGroup(tab, title, list)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateBindGroup: invalid tab"); return nil end
+    list = list or {}
+    local rowH = 30
+    local headerH = title and 22 or 0
+    local totalH = headerH + #list * rowH + 12
+
+    local f=Instance.new("Frame"); f.Name=(title or "BindGroup").."BindGroup"
+    f.Size=UDim2.new(1,0,0,totalH); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    if title then
+        local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-20,0,headerH); titleLbl.Position=UDim2.new(0,12,0,4)
+        titleLbl.BackgroundTransparency=1; titleLbl.Text=title; titleLbl.TextColor3=COLORS.ACCENT
+        titleLbl.TextSize=11; titleLbl.Font=Enum.Font.GothamBold
+        titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=f
+    end
+
+    local bindings = {}  -- label -> { bind, kbBtn, callback }
+    for i,entry in ipairs(list) do
+        local row=Instance.new("Frame"); row.Size=UDim2.new(1,-12,0,rowH-4); row.Position=UDim2.new(0,6,0,headerH+(i-1)*rowH+6)
+        row.BackgroundTransparency=1; row.BorderSizePixel=0; row.Parent=f
+
+        local rl=Instance.new("TextLabel"); rl.Size=UDim2.new(1,-90,1,0); rl.Position=UDim2.new(0,8,0,0)
+        rl.BackgroundTransparency=1; rl.Text=entry.label or ("Bind "..i); rl.TextColor3=COLORS.TEXT
+        rl.TextSize=12; rl.Font=Enum.Font.Gotham; rl.TextXAlignment=Enum.TextXAlignment.Left; rl.Parent=row
+
+        local kbBtn=Instance.new("TextButton"); kbBtn.Size=UDim2.new(0,70,0,22); kbBtn.Position=UDim2.new(1,-78,0.5,-11)
+        kbBtn.BackgroundColor3=COLORS.PRIMARY
+        kbBtn.TextColor3=COLORS.TEXT; kbBtn.TextSize=10; kbBtn.Font=Enum.Font.GothamBold
+        kbBtn.BorderSizePixel=0; kbBtn.AutoButtonColor=false; kbBtn.Parent=row
+        createCorner(kbBtn,5); createStroke(kbBtn,1,COLORS.BORDER)
+
+        -- Convert default
+        local curBind
+        if typeof(entry.default)=="EnumItem" then
+            if entry.default.EnumType==Enum.KeyCode then curBind={type="key",value=entry.default}
+            elseif entry.default.EnumType==Enum.UserInputType and MOUSE_INPUTS[entry.default] then
+                curBind={type="mouse",value=entry.default} end
+        end
+        kbBtn.Text = bindToString(curBind)
+
+        local listening=false; local lastTrig=0
+        kbBtn.MouseButton1Click:Connect(function()
+            if listening then return end; listening=true; kbBtn.Text="..."
+            createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
+            local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
+                if gp then return end
+                local nb
+                if inp.UserInputType==Enum.UserInputType.Keyboard then
+                    if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
+                        nb=nil
+                    else nb={type="key",value=inp.KeyCode} end
+                elseif MOUSE_INPUTS[inp.UserInputType] then nb={type="mouse",value=inp.UserInputType}
+                else return end
+                curBind=nb; kbBtn.Text=bindToString(curBind)
+                listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
+                if conn then conn:Disconnect() end
+                -- update saved state
+                local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end
+                f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snap))
+                saveConfig(nil,false)
+            end)
+        end)
+
+        local trigConn = UserInputService.InputBegan:Connect(function(inp,gp)
+            if gp or listening then return end
+            if tick()-lastTrig<0.2 then return end
+            if matchesBind(curBind, inp) then lastTrig=tick(); if entry.callback then entry.callback() end end
+        end); table.insert(activeInputConnections, trigConn)
+
+        bindings[entry.label or ("Bind "..i)] = {
+            getBind = function() return curBind end,
+            setBind = function(s) local b=stringToBind(s); curBind=b; kbBtn.Text=bindToString(curBind) end,
+            kbBtn = kbBtn,
+            callback = entry.callback,
+        }
+    end
+
+    -- save/restore: snap is {label = bindString}
+    local function snapshot()
+        local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end; return snap
+    end
+    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..((title or "Group"):gsub("%s+","_")).."_BindGroup")
+    f:SetAttribute("WidgetType","BindGroup")
+    f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot()))
+    elementSetters[f]=function(v)
+        if type(v)~="table" then return end
+        for label, bs in pairs(v) do if bindings[label] then bindings[label].setBind(bs) end end
+        f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot()))
+    end
+    local eid=f:GetAttribute("ElementID")
+    if restorationQueue[eid] and restorationQueue[eid].Type=="BindGroup" then
+        local v = restorationQueue[eid].Value
+        if type(v)=="table" then for label,bs in pairs(v) do if bindings[label] then bindings[label].setBind(bs) end end end
+        restorationQueue[eid]=nil
+    end
+    table.insert(tab.Elements,f)
+
+    return {
+        Frame=f, Instance=f,
+        GetBinds=snapshot,
+        SetBind=function(label,s) if bindings[label] then bindings[label].setBind(s); f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot())) end end,
+    }
+end
+
+-- ── CreateColorGradient: simple ColorSequence editor with 2 stops ──
+-- defaultStops = { Color3.fromRGB(...), Color3.fromRGB(...) }  -- start and end
+function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateColorGradient: invalid tab"); return nil end
+    defaultStops = defaultStops or { Color3.fromRGB(255,80,80), Color3.fromRGB(80,80,255) }
+    local startC = defaultStops[1] or Color3.fromRGB(255,80,80)
+    local endC   = defaultStops[2] or Color3.fromRGB(80,80,255)
+
+    local f=Instance.new("Frame"); f.Name=label.."ColorGradient"
+    f.Size=UDim2.new(1,0,0,56); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-110,0,16); lbl.Position=UDim2.new(0,10,0,4)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT
+    lbl.TextSize=12; lbl.Font=Enum.Font.GothamBold
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
+
+    -- swatches on the right
+    local function mkSwatch(xPos, c)
+        local s=Instance.new("TextButton"); s.Size=UDim2.new(0,22,0,22); s.Position=UDim2.new(1,xPos,0,6)
+        s.BackgroundColor3=c; s.Text=""; s.BorderSizePixel=0; s.AutoButtonColor=false; s.Parent=f
+        createCorner(s,5); createStroke(s,1,COLORS.BORDER)
+        return s
+    end
+    local sw1=mkSwatch(-66, startC)
+    local sw2=mkSwatch(-32, endC)
+
+    -- gradient preview strip
+    local strip=Instance.new("Frame"); strip.Size=UDim2.new(1,-20,0,14); strip.Position=UDim2.new(0,10,1,-20)
+    strip.BackgroundColor3=Color3.new(1,1,1); strip.BorderSizePixel=0; strip.Parent=f; createCorner(strip,4)
+    local grad=Instance.new("UIGradient"); grad.Parent=strip
+    grad.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)})
+
+    local function emit()
+        sw1.BackgroundColor3=startC; sw2.BackgroundColor3=endC
+        local seq = ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)})
+        grad.Color = seq
+        f:SetAttribute("ColorGradientValue", HttpService:JSONEncode({
+            {R=startC.R,G=startC.G,B=startC.B},
+            {R=endC.R,G=endC.G,B=endC.B},
+        }))
+        if onChange then onChange(seq) end
+        if not isInitializing then saveConfig(nil,false) end
+    end
+
+    -- click swatch to cycle through some preset colors, or right-click to open a quick HSV-style chooser
+    local presets = {
+        Color3.fromRGB(255,80,80), Color3.fromRGB(255,165,0), Color3.fromRGB(255,255,0),
+        Color3.fromRGB(74,222,128), Color3.fromRGB(80,220,255), Color3.fromRGB(80,80,255),
+        Color3.fromRGB(180,80,255), Color3.fromRGB(255,255,255), Color3.fromRGB(0,0,0),
+    }
+    local function cycleColor(curC)
+        local idx = 1
+        for i,c in ipairs(presets) do
+            if math.abs(c.R-curC.R)<0.01 and math.abs(c.G-curC.G)<0.01 and math.abs(c.B-curC.B)<0.01 then idx=i; break end
+        end
+        return presets[(idx % #presets)+1]
+    end
+    sw1.MouseButton1Click:Connect(function() startC=cycleColor(startC); emit() end)
+    sw2.MouseButton1Click:Connect(function() endC=cycleColor(endC); emit() end)
+
+    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..label:gsub("%s+","_").."_ColorGradient")
+    f:SetAttribute("WidgetType","ColorGradient")
+    emit()  -- sets initial attribute
+
+    local function setStops(s, e)
+        if typeof(s)=="Color3" then startC=s end
+        if typeof(e)=="Color3" then endC=e end
+        emit()
+    end
+
+    elementSetters[f]=function(v)
+        if type(v)=="table" and v[1] and v[2] then
+            local s=v[1]; local e=v[2]
+            local sc = (s.R and Color3.new(s.R,s.G,s.B)) or nil
+            local ec = (e.R and Color3.new(e.R,e.G,e.B)) or nil
+            if sc then startC=sc end; if ec then endC=ec end
+            emit()
+        end
+    end
+    local eid=f:GetAttribute("ElementID")
+    if restorationQueue[eid] and restorationQueue[eid].Type=="ColorGradient" then
+        elementSetters[f](restorationQueue[eid].Value); restorationQueue[eid]=nil
+    end
+    table.insert(tab.Elements,f)
+
+    return {
+        Frame=f, Instance=f,
+        GetValue=function() return ColorSequence.new({ColorSequenceKeypoint.new(0,startC), ColorSequenceKeypoint.new(1,endC)}) end,
+        GetStops=function() return startC, endC end,
+        SetStops=setStops,
+    }
+end
+
+-- ── CreateModal: blocking confirmation overlay ──
+-- buttons = { {text="OK", style="primary", callback=fn}, {text="Cancel", style="danger"} }
+function GuiLibrary:CreateModal(title, body, buttons)
+    buttons = buttons or {{text="OK", style="primary"}}
+    local sg = Instance.new("ScreenGui"); sg.Name="GuiLibraryModal"
+    sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true
+    sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+    sg.DisplayOrder = 1000
+    sg.Parent = game.CoreGui
+
+    local backdrop=Instance.new("TextButton"); backdrop.Size=UDim2.new(1,0,1,0)
+    backdrop.BackgroundColor3=Color3.new(0,0,0); backdrop.BackgroundTransparency=1
+    backdrop.Text=""; backdrop.AutoButtonColor=false; backdrop.BorderSizePixel=0
+    backdrop.Parent=sg
+    createTween(backdrop,{BackgroundTransparency=0.55})
+
+    local card=Instance.new("Frame"); card.Size=UDim2.new(0,360,0,180); card.AnchorPoint=Vector2.new(0.5,0.5)
+    card.Position=UDim2.new(0.5,0,0.5,-20); card.BackgroundColor3=COLORS.PRIMARY
+    card.BorderSizePixel=0; card.BackgroundTransparency=1
+    card.Parent=sg; createCorner(card,12); createStroke(card,1,COLORS.BORDER)
+    createTween(card,{BackgroundTransparency=0, Position=UDim2.new(0.5,0,0.5,0)},0.25)
+
+    local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-30,0,28); titleLbl.Position=UDim2.new(0,15,0,12)
+    titleLbl.BackgroundTransparency=1; titleLbl.Text=title or "Confirm"
+    titleLbl.TextColor3=COLORS.TEXT; titleLbl.TextSize=15; titleLbl.Font=Enum.Font.GothamBold
+    titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=card
+
+    local bodyLbl=Instance.new("TextLabel"); bodyLbl.Size=UDim2.new(1,-30,0,80); bodyLbl.Position=UDim2.new(0,15,0,44)
+    bodyLbl.BackgroundTransparency=1; bodyLbl.Text=body or ""
+    bodyLbl.TextColor3=COLORS.TEXT_MUTED; bodyLbl.TextSize=12; bodyLbl.Font=Enum.Font.Gotham
+    bodyLbl.TextXAlignment=Enum.TextXAlignment.Left; bodyLbl.TextYAlignment=Enum.TextYAlignment.Top
+    bodyLbl.TextWrapped=true; bodyLbl.Parent=card
+
+    local closed=false
+    local function close()
+        if closed then return end; closed=true
+        createTween(backdrop,{BackgroundTransparency=1},0.2)
+        createTween(card,{BackgroundTransparency=1, Position=UDim2.new(0.5,0,0.5,20)},0.2)
+        task.delay(0.25, function() sg:Destroy() end)
+    end
+
+    local btnW = 90; local btnH = 30; local gap=8
+    local totalW = #buttons*btnW + (#buttons-1)*gap
+    local startX = (360 - totalW)/2
+    for i,bd in ipairs(buttons) do
+        local b=Instance.new("TextButton"); b.Size=UDim2.new(0,btnW,0,btnH)
+        b.Position=UDim2.new(0,startX+(i-1)*(btnW+gap),1,-btnH-12)
+        local style=bd.style or "primary"
+        b.BackgroundColor3 = (style=="danger" and COLORS.DANGER) or (style=="ghost" and COLORS.HOVER) or COLORS.ACCENT
+        b.Text=bd.text or "Button"; b.TextColor3=Color3.new(1,1,1)
+        b.TextSize=12; b.Font=Enum.Font.GothamBold; b.BorderSizePixel=0
+        b.AutoButtonColor=false; b.Parent=card; createCorner(b,6)
+        b.MouseButton1Click:Connect(function()
+            if bd.callback then pcall(bd.callback) end
+            close()
+        end)
+        b.MouseEnter:Connect(function() createTween(b,{BackgroundTransparency=0.15}) end)
+        b.MouseLeave:Connect(function() createTween(b,{BackgroundTransparency=0}) end)
+    end
+    -- click backdrop to dismiss (if any button has style="ghost" or is implicitly cancel — keep simple: backdrop closes without firing)
+    backdrop.MouseButton1Click:Connect(close)
+
+    return {ScreenGui=sg, Close=close}
+end
+
+-- ── CreateProfile: named config-slot manager (Save / Load / Delete / New) ──
+local PROFILE_FOLDER = AUTO_SAVE_FOLDER .. "/profiles"
+local function profilePath(name) return PROFILE_FOLDER .. "/" .. name .. ".json" end
+
+local function listProfiles()
+    local out = {}
+    local ok = pcall(function()
+        if not isfolder(PROFILE_FOLDER) then return end
+        for _,fname in ipairs(listfiles(PROFILE_FOLDER) or {}) do
+            local n = fname:match("([^/\\]+)%.json$")
+            if n then table.insert(out, n) end
+        end
+    end)
+    if not ok then return {} end
+    table.sort(out)
+    return out
+end
+
+function GuiLibrary:CreateProfile(tab, label)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateProfile: invalid tab"); return nil end
+    label = label or "Profile"
+
+    local f=Instance.new("Frame"); f.Name=label.."Profile"
+    f.Size=UDim2.new(1,0,0,86); f.BackgroundColor3=COLORS.HOVER
+    f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
+
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-20,0,16); lbl.Position=UDim2.new(0,10,0,5)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=COLORS.TEXT_MUTED
+    lbl.TextSize=11; lbl.Font=Enum.Font.GothamBold; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=f
+
+    -- name input + load-dropdown row
+    local nameBox=Instance.new("TextBox"); nameBox.Size=UDim2.new(0.55,-14,0,24); nameBox.Position=UDim2.new(0,10,0,24)
+    nameBox.BackgroundColor3=COLORS.PRIMARY; nameBox.Text=""
+    nameBox.PlaceholderText="profile name..."; nameBox.PlaceholderColor3=COLORS.TEXT_MUTED
+    nameBox.TextColor3=COLORS.TEXT; nameBox.TextSize=11; nameBox.Font=Enum.Font.Gotham
+    nameBox.TextXAlignment=Enum.TextXAlignment.Left; nameBox.BorderSizePixel=0
+    nameBox.ClearTextOnFocus=false; nameBox.Parent=f; createCorner(nameBox,5)
+    local np=Instance.new("UIPadding"); np.PaddingLeft=UDim.new(0,6); np.PaddingRight=UDim.new(0,6); np.Parent=nameBox
+
+    -- "Current:" label + value
+    local curLbl=Instance.new("TextLabel"); curLbl.Size=UDim2.new(0.45,-14,0,24); curLbl.Position=UDim2.new(0.55,10,0,24)
+    curLbl.BackgroundTransparency=1; curLbl.TextColor3=COLORS.TEXT_MUTED
+    curLbl.TextSize=11; curLbl.Font=Enum.Font.Gotham
+    curLbl.TextXAlignment=Enum.TextXAlignment.Left; curLbl.Parent=f
+
+    local function mkBtn(textVal, xPos, w, color)
+        local b=Instance.new("TextButton"); b.Size=UDim2.new(0,w,0,24); b.Position=UDim2.new(0,xPos,0,54)
+        b.BackgroundColor3=color; b.Text=textVal; b.TextColor3=Color3.new(1,1,1)
+        b.TextSize=11; b.Font=Enum.Font.GothamBold; b.BorderSizePixel=0
+        b.AutoButtonColor=false; b.Parent=f; createCorner(b,5)
+        b.MouseEnter:Connect(function() createTween(b,{BackgroundTransparency=0.15}) end)
+        b.MouseLeave:Connect(function() createTween(b,{BackgroundTransparency=0}) end)
+        return b
+    end
+    local saveBtn = mkBtn("Save",   10,  60, COLORS.ACCENT)
+    local loadBtn = mkBtn("Load",   76,  60, COLORS.HOVER)
+    local delBtn  = mkBtn("Delete", 142, 64, COLORS.DANGER)
+
+    local currentName = nil
+    local function refreshCur() curLbl.Text = "Current: " .. (currentName or "—") end
+    refreshCur()
+
+    local function ensureFolder()
+        pcall(function()
+            if not isfolder(AUTO_SAVE_FOLDER) then makefolder(AUTO_SAVE_FOLDER) end
+            if not isfolder(PROFILE_FOLDER) then makefolder(PROFILE_FOLDER) end
+        end)
+    end
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local name = nameBox.Text
+        if not name or name=="" then
+            GuiLibrary:CreateNotification("Profile","Enter a name first.",2,"warning"); return
+        end
+        ensureFolder()
+        -- write a snapshot of the current auto-save file (just-saved state) to the profile file
+        saveConfig(nil, true)
+        local ok, raw = pcall(function() return readfile(getAutoSavePath()) end)
+        if ok and raw then
+            pcall(function() writefile(profilePath(name), raw) end)
+            currentName = name; refreshCur()
+            GuiLibrary:CreateNotification("Profile", "Saved profile '"..name.."'.", 2, "success")
+        else
+            GuiLibrary:CreateNotification("Profile","Save failed.",2,"error")
+        end
+    end)
+
+    loadBtn.MouseButton1Click:Connect(function()
+        local name = nameBox.Text
+        if not name or name=="" then
+            GuiLibrary:CreateNotification("Profile","Enter a name to load.",2,"warning"); return
+        end
+        local ok, raw = pcall(function() return readfile(profilePath(name)) end)
+        if not ok or not raw then
+            GuiLibrary:CreateNotification("Profile","Profile '"..name.."' not found.",2,"error"); return
+        end
+        pcall(function() writefile(getAutoSavePath(), raw) end)
+        currentName = name; refreshCur()
+        GuiLibrary:CreateNotification("Profile",
+            "Loaded '"..name.."'. Reload the GUI for changes to fully apply.", 4, "info")
+        if GuiLibrary.CurrentWindow then pcall(function() GuiLibrary.LoadConfig(GuiLibrary.CurrentWindow) end) end
+    end)
+
+    delBtn.MouseButton1Click:Connect(function()
+        local name = nameBox.Text
+        if not name or name=="" then
+            GuiLibrary:CreateNotification("Profile","Enter a name to delete.",2,"warning"); return
+        end
+        GuiLibrary:CreateModal("Delete profile?",
+            "Delete profile '"..name.."'? This cannot be undone.",
+            {
+                {text="Cancel", style="ghost"},
+                {text="Delete", style="danger", callback=function()
+                    pcall(function() delfile(profilePath(name)) end)
+                    if currentName==name then currentName=nil; refreshCur() end
+                    GuiLibrary:CreateNotification("Profile","Deleted '"..name.."'.",2,"info")
+                end},
+            })
+    end)
+
+    table.insert(tab.Elements,f)
+    return {
+        Frame=f, Instance=f,
+        List=listProfiles,
+        Save=function(n) nameBox.Text=n or ""; saveBtn.MouseButton1Click:Fire() end,
+        Load=function(n) nameBox.Text=n or ""; loadBtn.MouseButton1Click:Fire() end,
+        Delete=function(n) nameBox.Text=n or ""; delBtn.MouseButton1Click:Fire() end,
+        GetCurrent=function() return currentName end,
+    }
 end
 
 -- ==================== NOTIFICATIONS (stacked) ====================
