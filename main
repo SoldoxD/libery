@@ -2071,7 +2071,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     iconImg.ScaleType=Enum.ScaleType.Fit; iconImg.ZIndex=5
     iconImg.Parent=tb; createCorner(iconImg,8)
     local titleLbl=Instance.new("TextLabel"); titleLbl.Name="TitleLabel"
-    titleLbl.Size=UDim2.new(1,-170,1,0); titleLbl.Position=UDim2.new(0,16,0,0)
+    titleLbl.Size=UDim2.new(1,-210,1,0); titleLbl.Position=UDim2.new(0,16,0,0)
     titleLbl.BackgroundTransparency=1; titleLbl.Text=title; titleLbl.TextColor3=COLORS.TEXT
     titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=tb
@@ -2099,16 +2099,22 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     end
     if iconAsset then setIcon(iconAsset) end
     local fpsLbl=Instance.new("TextLabel"); fpsLbl.Name="FPSLabel"
-    fpsLbl.Size=UDim2.new(0,58,0,26); fpsLbl.Position=UDim2.new(1,-148,0.5,-13)
+    fpsLbl.Size=UDim2.new(0,58,0,26); fpsLbl.Position=UDim2.new(1,-186,0.5,-13)
     fpsLbl.BackgroundColor3=COLORS.HOVER; fpsLbl.TextColor3=COLORS.SUCCESS
     fpsLbl.TextSize=11; fpsLbl.Font=Enum.Font.GothamBold; fpsLbl.Text="FPS 60"
     fpsLbl.Visible=false; fpsLbl.Parent=tb; createCorner(fpsLbl,6)
     local settingsBtn=Instance.new("TextButton"); settingsBtn.Name="SettingsButton"
-    settingsBtn.Size=UDim2.new(0,32,0,32); settingsBtn.Position=UDim2.new(1,-78,0.5,-16)
+    settingsBtn.Size=UDim2.new(0,32,0,32); settingsBtn.Position=UDim2.new(1,-116,0.5,-16)
     settingsBtn.BackgroundColor3=COLORS.HOVER; settingsBtn.BackgroundTransparency=0.35
     settingsBtn.Text="⚙"; settingsBtn.TextColor3=COLORS.TEXT_MUTED
     settingsBtn.TextSize=15; settingsBtn.Font=Enum.Font.GothamBold
     settingsBtn.BorderSizePixel=0; settingsBtn.AutoButtonColor=false; settingsBtn.Parent=tb; createCorner(settingsBtn,8)
+    local minBtn=Instance.new("TextButton"); minBtn.Name="MinimizeButton"
+    minBtn.Size=UDim2.new(0,32,0,32); minBtn.Position=UDim2.new(1,-78,0.5,-16)
+    minBtn.BackgroundColor3=COLORS.HOVER; minBtn.BackgroundTransparency=0.35
+    minBtn.Text="—"; minBtn.TextColor3=COLORS.TEXT_MUTED
+    minBtn.TextSize=15; minBtn.Font=Enum.Font.GothamBold
+    minBtn.BorderSizePixel=0; minBtn.AutoButtonColor=false; minBtn.Parent=tb; createCorner(minBtn,8)
     local closeBtn=Instance.new("TextButton"); closeBtn.Name="CloseButton"
     closeBtn.Size=UDim2.new(0,32,0,32); closeBtn.Position=UDim2.new(1,-40,0.5,-16)
     closeBtn.BackgroundColor3=COLORS.DANGER; closeBtn.BackgroundTransparency=0.55
@@ -2164,11 +2170,13 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     }
     GuiLibrary.CurrentWindow=window
     local isVisible=true
+    local minimized=false
     local fpsConn=RunService.RenderStepped:Connect(function(dt)
         if fpsLbl.Visible then fpsLbl.Text="FPS "..math.round(1/dt) end
     end); table.insert(activeInputConnections,fpsConn)
     tb.Active=true; mf.Active=true
-    local dragActive=false; local dragStart=Vector2.new(); local dragOrigPos=Vector2.new()
+    local dragActive=false; local dragStart=Vector3.new(); local dragOrigPos=Vector2.new()
+    local dragInput=nil
     local function isOverButton(btn, m)
         local bp=btn.AbsolutePosition; local bs=btn.AbsoluteSize
         return m.X>=bp.X and m.X<=bp.X+bs.X and m.Y>=bp.Y and m.Y<=bp.Y+bs.Y
@@ -2177,14 +2185,22 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         if inp.UserInputType~=Enum.UserInputType.MouseButton1 and inp.UserInputType~=Enum.UserInputType.Touch then return end
         if not mf.Visible then return end
         if window.LockPosition then return end
-        local m=UserInputService:GetMouseLocation()
-        if isOverButton(settingsBtn,m) or isOverButton(closeBtn,m) then return end
+        -- Use the input's own position so touch/mouse start from the exact press point.
+        local m=inp.Position
+        if isOverButton(settingsBtn,m) or isOverButton(closeBtn,m) or isOverButton(minBtn,m) then return end
         dragActive=true
-        dragStart=m
+        dragInput=inp
+        dragStart=inp.Position
         dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
     end)
+    -- Track the active movement input (the same touch/mouse-move object) for this drag.
+    tb.InputChanged:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch then
+            dragInput=inp
+        end
+    end)
     local dragEndConn=UserInputService.InputEnded:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
             if dragActive then
                 dragActive=false
                 if not isInitializing then saveConfig(nil,false) end
@@ -2192,28 +2208,35 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         end
     end); table.insert(activeInputConnections,dragEndConn)
     local dragMoveConn=UserInputService.InputChanged:Connect(function(inp)
-        if dragActive and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
-            local m=UserInputService:GetMouseLocation()
-            local d=m-dragStart
+        if dragActive and inp==dragInput then
+            local d=inp.Position-dragStart
             mf.Position=UDim2.new(0, dragOrigPos.X+d.X, 0, dragOrigPos.Y+d.Y)
         end
     end); table.insert(activeInputConnections,dragMoveConn)
-    local resizing=false; local resStart=Vector2.new(); local resStartSz=Vector2.new()
+    local resizing=false; local resStart=Vector3.new(); local resStartSz=Vector2.new()
+    local resInput=nil
     local minW,minH=380,280
-    resizeBtn.MouseButton1Down:Connect(function()
-        resizing=true; resStart=UserInputService:GetMouseLocation()
-        resStartSz=Vector2.new(mf.AbsoluteSize.X,mf.AbsoluteSize.Y)
+    resizeBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+            resizing=true; resStart=inp.Position
+            resStartSz=Vector2.new(mf.AbsoluteSize.X,mf.AbsoluteSize.Y)
+        end
+    end)
+    resizeBtn.InputChanged:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch then
+            resInput=inp
+        end
     end)
     resizeBtn.MouseEnter:Connect(function() for _,d in ipairs(resizeHandle:GetChildren()) do if d:IsA("Frame") then createTween(d,{BackgroundColor3=COLORS.ACCENT}) end end end)
     resizeBtn.MouseLeave:Connect(function() for _,d in ipairs(resizeHandle:GetChildren()) do if d:IsA("Frame") then createTween(d,{BackgroundColor3=COLORS.BORDER}) end end end)
     local resEndConn=UserInputService.InputEnded:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseButton1 and resizing then
+        if (inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch) and resizing then
             resizing=false; window.CurrentSize=mf.Size; saveConfig(nil,false)
         end
     end); table.insert(activeInputConnections,resEndConn)
     local resMoveConn=UserInputService.InputChanged:Connect(function(inp)
-        if resizing and inp.UserInputType==Enum.UserInputType.MouseMovement then
-            local m=UserInputService:GetMouseLocation(); local d=m-resStart
+        if resizing and inp==resInput then
+            local d=inp.Position-resStart
             local nw=math.max(resStartSz.X+d.X,minW); local nh=math.max(resStartSz.Y+d.Y,minH)
             mf.Size=UDim2.new(0,nw,0,nh); window.CurrentSize=mf.Size
         end
@@ -2288,6 +2311,31 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     end)
     closeBtn.MouseEnter:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.1}) end)
     closeBtn.MouseLeave:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.55}) end)
+    -- Minimize collapses the window down to just the title bar so it stays
+    -- draggable and restorable without needing a keyboard (mobile friendly).
+    local function setMinimized(state)
+        if minimized==state then return end
+        minimized=state
+        if state then
+            window.PreMinSize=mf.Size
+            contentFrame.Visible=false; resizeHandle.Visible=false
+            createTween(mf,{Size=UDim2.new(mf.Size.X.Scale,mf.Size.X.Offset,0,46)},ANIM_TIME)
+            minBtn.Text="□"
+        else
+            local sz=window.PreMinSize or window.CurrentSize
+            createTween(mf,{Size=sz},ANIM_TIME)
+            task.delay(ANIM_TIME*0.5,function()
+                if not minimized then contentFrame.Visible=true; resizeHandle.Visible=true end
+            end)
+            minBtn.Text="—"
+        end
+    end
+    minBtn.MouseButton1Click:Connect(function() setMinimized(not minimized) end)
+    minBtn.MouseEnter:Connect(function() createTween(minBtn,{BackgroundTransparency=0,TextColor3=COLORS.TEXT}) end)
+    minBtn.MouseLeave:Connect(function() createTween(minBtn,{BackgroundTransparency=0.35,TextColor3=COLORS.TEXT_MUTED}) end)
+    window.Minimize=function() setMinimized(true) end
+    window.Restore=function() setMinimized(false) end
+    window.ToggleMinimize=function() setMinimized(not minimized) end
     window.Hide=hideWindow; window.Show=showWindow
     window.Toggle=function() if isVisible then hideWindow() else showWindow() end end
     window.SetIcon=setIcon
@@ -2300,6 +2348,12 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     mf.Visible=true
     local sz = window.CurrentSize or size
     local vp = workspace.CurrentCamera.ViewportSize
+    -- Clamp the window to the viewport so it never opens larger than a phone screen.
+    local maxW=math.max(vp.X-20,minW); local maxH=math.max(vp.Y-20,minH)
+    local clampedW=math.clamp(sz.X.Offset,minW,maxW)
+    local clampedH=math.clamp(sz.Y.Offset,minH,maxH)
+    sz=UDim2.new(0,clampedW,0,clampedH)
+    window.CurrentSize=sz
     local targetX, targetY
     if window.SavedPosition then
         targetX = window.SavedPosition.X.Offset
