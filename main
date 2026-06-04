@@ -505,7 +505,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Slider")
     f:SetAttribute("WidgetType","Slider"); f:SetAttribute("SliderMin",min); f:SetAttribute("SliderMax",max)
     local eid=f:GetAttribute("ElementID"); local cur=default or min
-    local dragging=false; local curPct=0
+    local dragging=false; local curPct=0; local dragInput=nil
     local function updateSlider(v, shouldSave)
         if shouldSave==nil then shouldSave=false end
         cur=math.clamp(v,min,max); curPct=(cur-min)/(max-min)
@@ -514,7 +514,11 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         if callback then callback(cur) end
         if shouldSave and not isInitializing then saveConfig(nil,false) end
     end
-    handle.MouseButton1Down:Connect(function() dragging=true end)
+    handle.InputBegan:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragInput=inp
+        end
+    end)
     handle.MouseEnter:Connect(function()
         if not dragging then createTween(handle,{Size=UDim2.new(0,22,0,22),Position=UDim2.new(curPct,-11,0.5,-11)}) end
     end)
@@ -522,22 +526,23 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         if not dragging then createTween(handle,{Size=UDim2.new(0,18,0,18),Position=UDim2.new(curPct,-9,0.5,-9)}) end
     end)
     local endConn=UserInputService.InputEnded:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseButton1 and dragging then
-            dragging=false
+        if dragging and (inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch) then
+            dragging=false; dragInput=nil
             createTween(handle,{Size=UDim2.new(0,18,0,18),Position=UDim2.new(curPct,-9,0.5,-9)})
             if not isInitializing then saveConfig(nil,false) end
         end
     end); table.insert(activeInputConnections,endConn)
     local chgConn=UserInputService.InputChanged:Connect(function(inp)
-        if dragging and inp.UserInputType==Enum.UserInputType.MouseMovement then
+        if dragging and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp==dragInput) then
             local pct=math.clamp((inp.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
             updateSlider(min+(max-min)*pct)
         end
     end); table.insert(activeInputConnections,chgConn)
     track.InputBegan:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragInput=inp
             local pct=math.clamp((inp.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
-            updateSlider(min+(max-min)*pct); dragging=true
+            updateSlider(min+(max-min)*pct)
         end
     end)
     elementSetters[f]=updateSlider
@@ -886,15 +891,17 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
         local p=(inp and inp.Position) and inp.Position or UserInputService:GetMouseLocation()
         return typeof(p)=="Vector3" and Vector2.new(p.X,p.Y) or (typeof(p)=="Vector2" and p or UserInputService:GetMouseLocation())
     end
-    svF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=true;local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
-    svF.InputChanged:Connect(function(i) if dragSV and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
-    svF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=false end end)
-    hueF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
-    hueF.InputChanged:Connect(function(i) if dragHue and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
-    hueF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=false end end)
-    tranF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
-    tranF.InputChanged:Connect(function(i) if dragTran and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
-    tranF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=false end end)
+    local function isPress(i) return i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch end
+    local function isMove(i) return i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch end
+    svF.InputBegan:Connect(function(i) if isPress(i) then dragSV=true;local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+    svF.InputChanged:Connect(function(i) if dragSV and isMove(i) then local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+    svF.InputEnded:Connect(function(i) if isPress(i) then dragSV=false end end)
+    hueF.InputBegan:Connect(function(i) if isPress(i) then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+    hueF.InputChanged:Connect(function(i) if dragHue and isMove(i) then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+    hueF.InputEnded:Connect(function(i) if isPress(i) then dragHue=false end end)
+    tranF.InputBegan:Connect(function(i) if isPress(i) then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+    tranF.InputChanged:Connect(function(i) if dragTran and isMove(i) then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+    tranF.InputEnded:Connect(function(i) if isPress(i) then dragTran=false end end)
     local function onRGB()
         local r=math.clamp(tonumber(rBox.Text) or 0,0,255)
         local g=math.clamp(tonumber(gBox.Text) or 0,0,255)
@@ -1664,15 +1671,17 @@ function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
             local p=(inp and inp.Position) and inp.Position or UserInputService:GetMouseLocation()
             return typeof(p)=="Vector3" and Vector2.new(p.X,p.Y) or (typeof(p)=="Vector2" and p or UserInputService:GetMouseLocation())
         end
-        svF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=true;local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
-        svF.InputChanged:Connect(function(i) if dragSV and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
-        svF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragSV=false end end)
-        hueF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
-        hueF.InputChanged:Connect(function(i) if dragHue and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
-        hueF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragHue=false end end)
-        tranF.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
-        tranF.InputChanged:Connect(function(i) if dragTran and i.UserInputType==Enum.UserInputType.MouseMovement then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
-        tranF.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragTran=false end end)
+        local function isPress(i) return i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch end
+        local function isMove(i) return i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch end
+        svF.InputBegan:Connect(function(i) if isPress(i) then dragSV=true;local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+        svF.InputChanged:Connect(function(i) if dragSV and isMove(i) then local c=sp(i);local x=math.clamp((c.X-svF.AbsolutePosition.X)/svF.AbsoluteSize.X,0,1);local y=math.clamp((c.Y-svF.AbsolutePosition.Y)/svF.AbsoluteSize.Y,0,1);setHSV(hue,x,1-y) end end)
+        svF.InputEnded:Connect(function(i) if isPress(i) then dragSV=false end end)
+        hueF.InputBegan:Connect(function(i) if isPress(i) then dragHue=true;local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+        hueF.InputChanged:Connect(function(i) if dragHue and isMove(i) then local c=sp(i);setHSV(math.clamp((c.Y-hueF.AbsolutePosition.Y)/hueF.AbsoluteSize.Y,0,1),sat,val) end end)
+        hueF.InputEnded:Connect(function(i) if isPress(i) then dragHue=false end end)
+        tranF.InputBegan:Connect(function(i) if isPress(i) then dragTran=true;local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+        tranF.InputChanged:Connect(function(i) if dragTran and isMove(i) then local c=sp(i);setHSV(hue,sat,val,math.clamp((c.Y-tranF.AbsolutePosition.Y)/tranF.AbsoluteSize.Y,0,1)) end end)
+        tranF.InputEnded:Connect(function(i) if isPress(i) then dragTran=false end end)
         local function onRGB()
             local r=math.clamp(tonumber(rBox.Text) or 0,0,255)
             local g=math.clamp(tonumber(gBox.Text) or 0,0,255)
