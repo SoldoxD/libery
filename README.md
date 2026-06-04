@@ -59,6 +59,9 @@ If `iconAsset` is omitted, `GuiLibrary.Icon` is used as a fallback.
 | `window.Show()` | Show with animation |
 | `window.Hide()` | Hide with animation |
 | `window.Toggle()` | Toggle visibility |
+| `window.Minimize()` | Collapse the window to just its title bar |
+| `window.Restore()` | Expand a minimized window back to full size |
+| `window.ToggleMinimize()` | Toggle minimized/restored (same as the title-bar — button) |
 | `window.SetTitle(text)` | Change title at runtime |
 | `window.SetIcon(asset)` | Change icon at runtime (`nil`/`false`/`0` removes it) |
 | `window.SwitchTab(name)` | Switch to a tab by name |
@@ -437,6 +440,7 @@ GuiLibrary:TestFileSaving()           -- → boolean
 ```lua
 GuiLibrary:CreateWindow(title, size, iconAsset)  -- → window
 window.Show() ; window.Hide() ; window.Toggle()
+window.Minimize() ; window.Restore() ; window.ToggleMinimize()
 window.SwitchTab(name)
 window.SetTitle(text) ; window.SetIcon(asset)
 ```
