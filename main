@@ -946,20 +946,31 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
         SetTransparency=setTransparency,
     }
 end
-local MOUSE_INPUTS = {
-    [Enum.UserInputType.MouseButton1] = "MB1",
-    [Enum.UserInputType.MouseButton2] = "MB2",
-    [Enum.UserInputType.MouseButton3] = "MB3",
-}
+-- Mouse button support (MB1-MB5). Roblox's UserInputType only *defines*
+-- MouseButton1-3, so we parse/build names dynamically instead of using a fixed
+-- table. That way any mouse button an executor actually delivers through
+-- InputBegan (e.g. the side buttons 4/5) is captured, named, and restorable.
+local function mouseName(uit)
+    local n = tostring(uit):match("MouseButton(%d+)")
+    return n and ("MB"..n) or nil
+end
+local function isMouseButton(uit)
+    return typeof(uit)=="EnumItem" and uit.EnumType==Enum.UserInputType and mouseName(uit)~=nil
+end
 local function bindToString(b)
     if not b then return "None" end
     if b.type=="key" then return b.value.Name end
-    if b.type=="mouse" then return MOUSE_INPUTS[b.value] or "None" end
+    if b.type=="mouse" then return mouseName(b.value) or "None" end
     return "None"
 end
 local function stringToBind(s)
     if not s or s=="" or s=="None" then return nil end
-    for ut,name in pairs(MOUSE_INPUTS) do if name==s then return {type="mouse",value=ut} end end
+    local mb = s:match("^MB(%d+)$")
+    if mb then
+        local ok, uit = pcall(function() return Enum.UserInputType["MouseButton"..mb] end)
+        if ok and uit then return {type="mouse",value=uit} end
+        return nil
+    end
     local ok, kc = pcall(function() return Enum.KeyCode[s] end)
     if ok and kc then return {type="key",value=kc} end
     return nil
@@ -980,7 +991,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     local curBind
     if typeof(defaultKey)=="EnumItem" then
         if defaultKey.EnumType==Enum.KeyCode then curBind={type="key",value=defaultKey}
-        elseif defaultKey.EnumType==Enum.UserInputType and MOUSE_INPUTS[defaultKey] then
+        elseif isMouseButton(defaultKey) then
             curBind={type="mouse",value=defaultKey} end
     end
     local kbBtn=Instance.new("TextButton"); kbBtn.Name="KeybindButton"
@@ -998,7 +1009,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         if v==nil or v==false or v=="None" or v=="" then curBind=nil; commit(); return true end
         if typeof(v)=="EnumItem" then
             if v.EnumType==Enum.KeyCode then curBind={type="key",value=v}; commit(); return true
-            elseif v.EnumType==Enum.UserInputType and MOUSE_INPUTS[v] then
+            elseif isMouseButton(v) then
                 curBind={type="mouse",value=v}; commit(); return true end
             return false
         end
@@ -1011,8 +1022,10 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     kbBtn.MouseButton1Click:Connect(function()
         if listening then return end; listening=true; kbBtn.Text="..."
         createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
+        -- NOTE: we deliberately do NOT ignore gameProcessedEvent (gp) here.
+        -- While listening we want to grab the key even when the pointer is over
+        -- the GUI, so you no longer have to tab out for it to register.
         local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
-            if gp then return end
             local newBind
             if inp.UserInputType==Enum.UserInputType.Keyboard then
                 if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
@@ -1020,7 +1033,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
                 else
                     newBind={type="key",value=inp.KeyCode}
                 end
-            elseif MOUSE_INPUTS[inp.UserInputType] then
+            elseif isMouseButton(inp.UserInputType) then
                 newBind={type="mouse",value=inp.UserInputType}
             else
                 return
@@ -1450,7 +1463,7 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
         local curBind
         if typeof(entry.default)=="EnumItem" then
             if entry.default.EnumType==Enum.KeyCode then curBind={type="key",value=entry.default}
-            elseif entry.default.EnumType==Enum.UserInputType and MOUSE_INPUTS[entry.default] then
+            elseif isMouseButton(entry.default) then
                 curBind={type="mouse",value=entry.default} end
         end
         kbBtn.Text = bindToString(curBind)
@@ -1458,14 +1471,15 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
         kbBtn.MouseButton1Click:Connect(function()
             if listening then return end; listening=true; kbBtn.Text="..."
             createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
+            -- Same as CreateKeybind: don't ignore gp while listening, so the key
+            -- is captured without needing to tab out of the GUI.
             local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
-                if gp then return end
                 local nb
                 if inp.UserInputType==Enum.UserInputType.Keyboard then
                     if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
                         nb=nil
                     else nb={type="key",value=inp.KeyCode} end
-                elseif MOUSE_INPUTS[inp.UserInputType] then nb={type="mouse",value=inp.UserInputType}
+                elseif isMouseButton(inp.UserInputType) then nb={type="mouse",value=inp.UserInputType}
                 else return end
                 curBind=nb; kbBtn.Text=bindToString(curBind)
                 listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
