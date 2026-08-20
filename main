@@ -40,6 +40,88 @@ local dropdownClosers    = {}
 local restorationQueue   = {}
 local isInitializing     = false
 local activeInputConnections = {}
+
+-- ── Extended mouse button (MB4 / MB5) support ────────────────────────────────
+-- Roblox's UserInputService only reports MouseButton1-3, so the two side
+-- buttons never arrive through InputBegan. We read them straight from the OS
+-- with GetAsyncKeyState (VK_XBUTTON1 = 0x05, VK_XBUTTON2 = 0x06), polled every
+-- frame while the Roblox window is focused. This works on any executor that
+-- exposes a GetAsyncKeyState-style function (Synapse X and most others); if
+-- none is found the module stays disabled and everything else keeps working.
+local SideButtons = { NAMES = { MB4 = 0x05, MB5 = 0x06 } }
+do
+    local env = (type(getgenv)=="function" and getgenv()) or _G or {}
+    local function pick(...)   -- first callable arg (select handles nil holes)
+        for i = 1, select("#", ...) do
+            local f = select(i, ...)
+            if type(f)=="function" then return f end
+        end
+        return nil
+    end
+    local synT = rawget(env,"syn") or rawget(_G,"syn")
+    local keyState = pick(
+        rawget(env,"GetAsyncKeyState"), rawget(env,"getasynckeystate"),
+        rawget(_G ,"GetAsyncKeyState"), rawget(_G ,"getasynckeystate"),
+        type(synT)=="table" and (synT.get_async_key_state or synT.getasynckeystate) or nil
+    )
+    local rbxActive = pick(rawget(env,"isrbxactive"), rawget(_G,"isrbxactive"))
+
+    local function isDownRaw(vk)
+        if not keyState then return false end
+        local ok, v = pcall(keyState, vk)
+        if not ok then return false end
+        if type(v)=="boolean" then return v end
+        if type(v)=="number"  then return v ~= 0 end   -- nonzero SHORT = held
+        return false
+    end
+    function SideButtons.isDown(name)
+        local vk = SideButtons.NAMES[name]
+        return vk ~= nil and isDownRaw(vk)
+    end
+
+    local began, ended = {}, {}
+    local function connect(store, fn)
+        store[fn] = true
+        return { Disconnect = function() store[fn] = nil end }
+    end
+    function SideButtons.onBegan(fn) return connect(began, fn) end
+    function SideButtons.onEnded(fn) return connect(ended, fn) end
+
+    local polling = false
+    local function startPoll()
+        if polling then return end
+        polling = true
+        local down = {}
+        local pollConn = RunService.Heartbeat:Connect(function()
+            local active = true
+            if rbxActive then local ok,r = pcall(rbxActive); if ok then active = (r and true or false) end end
+            for name,vk in pairs(SideButtons.NAMES) do
+                local now = active and isDownRaw(vk)
+                if now ~= (down[vk] or false) then
+                    down[vk] = now
+                    for fn in pairs(now and began or ended) do pcall(fn, name) end
+                end
+            end
+        end)
+        table.insert(activeInputConnections, pollConn)
+    end
+
+    -- Escape hatch: if your executor exposes the key-state reader under a name we
+    -- didn't auto-detect, wire it in with GuiLibrary.SideButtons.setProvider(fn).
+    -- fn(virtualKeyCode) should return the WinAPI GetAsyncKeyState value.
+    function SideButtons.setProvider(fn)
+        if type(fn)~="function" then return false end
+        keyState = fn
+        SideButtons.enabled = true
+        startPoll()
+        return true
+    end
+
+    SideButtons.enabled = keyState ~= nil
+    if SideButtons.enabled then startPoll() end
+end
+GuiLibrary.SideButtons = SideButtons
+
 local function getPlaceFolder() return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId end
 local function getProfilePath(name) return getPlaceFolder() .. "/" .. name .. ".json" end
 local function getActivePointerPath() return getPlaceFolder() .. "/_active.txt" end
@@ -959,12 +1041,14 @@ local function isMouseButton(uit)
 end
 local function bindToString(b)
     if not b then return "None" end
-    if b.type=="key" then return b.value.Name end
+    if b.type=="key"  then return b.value.Name end
+    if b.type=="side" then return b.name end          -- MB4 / MB5 (OS-polled)
     if b.type=="mouse" then return mouseName(b.value) or "None" end
     return "None"
 end
 local function stringToBind(s)
     if not s or s=="" or s=="None" then return nil end
+    if SideButtons.NAMES[s] then return {type="side", name=s} end   -- MB4 / MB5
     local mb = s:match("^MB(%d+)$")
     if mb then
         local ok, uit = pcall(function() return Enum.UserInputType["MouseButton"..mb] end)
@@ -1025,29 +1109,40 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         -- NOTE: we deliberately do NOT ignore gameProcessedEvent (gp) here.
         -- While listening we want to grab the key even when the pointer is over
         -- the GUI, so you no longer have to tab out for it to register.
-        local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
-            local newBind
-            if inp.UserInputType==Enum.UserInputType.Keyboard then
-                if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
-                    newBind=nil
-                else
-                    newBind={type="key",value=inp.KeyCode}
-                end
-            elseif isMouseButton(inp.UserInputType) then
-                newBind={type="mouse",value=inp.UserInputType}
-            else
-                return
-            end
+        local uisConn, sideConn, done
+        local function finish(newBind)
+            if done then return end; done=true
             curBind=newBind; commit()
             listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
-            if conn then conn:Disconnect() end; saveConfig(nil,false)
+            if uisConn then uisConn:Disconnect() end
+            if sideConn then sideConn:Disconnect() end
+            saveConfig(nil,false)
+        end
+        uisConn=UserInputService.InputBegan:Connect(function(inp,gp)
+            if inp.UserInputType==Enum.UserInputType.Keyboard then
+                if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
+                    finish(nil)
+                else
+                    finish({type="key",value=inp.KeyCode})
+                end
+            elseif isMouseButton(inp.UserInputType) then
+                finish({type="mouse",value=inp.UserInputType})
+            end
         end)
+        -- MB4 / MB5 come from the OS poll, not UserInputService.
+        sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
     end)
     local kbConn=UserInputService.InputBegan:Connect(function(inp,gp)
         if gp or listening then return end
         if tick()-lastTrig<0.2 then return end
         if matchesBind(curBind, inp) then lastTrig=tick(); if callback then callback() end end
     end); table.insert(activeInputConnections,kbConn)
+    local sideTrig=SideButtons.onBegan(function(name)
+        if listening then return end
+        if not (curBind and curBind.type=="side" and curBind.name==name) then return end
+        if tick()-lastTrig<0.2 then return end
+        lastTrig=tick(); if callback then callback() end
+    end); table.insert(activeInputConnections,sideTrig)
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Keybind")
     f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",bindToString(curBind))
     elementSetters[f]=function(v) if setKeybind(v) and not isInitializing then saveConfig(nil,false) end end
@@ -1059,7 +1154,14 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     return {
         Frame=f,
         GetKey=function() return curBind and curBind.type=="key" and curBind.value or nil end,
-        GetBind=function() return curBind and {type=curBind.type, value=curBind.value} or nil end,
+        GetBind=function() return curBind and {type=curBind.type, value=curBind.value, name=curBind.name} or nil end,
+        IsDown=function()
+            if not curBind then return false end
+            if curBind.type=="side" then return SideButtons.isDown(curBind.name) end
+            if curBind.type=="key"  then return UserInputService:IsKeyDown(curBind.value) end
+            if curBind.type=="mouse" then return UserInputService:IsMouseButtonPressed(curBind.value) end
+            return false
+        end,
         SetKey=setKeybind,
     }
 end
@@ -1473,27 +1575,38 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
             createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
             -- Same as CreateKeybind: don't ignore gp while listening, so the key
             -- is captured without needing to tab out of the GUI.
-            local conn; conn=UserInputService.InputBegan:Connect(function(inp,gp)
-                local nb
-                if inp.UserInputType==Enum.UserInputType.Keyboard then
-                    if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
-                        nb=nil
-                    else nb={type="key",value=inp.KeyCode} end
-                elseif isMouseButton(inp.UserInputType) then nb={type="mouse",value=inp.UserInputType}
-                else return end
+            local uisConn, sideConn, done
+            local function finish(nb)
+                if done then return end; done=true
                 curBind=nb; kbBtn.Text=bindToString(curBind)
                 listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
-                if conn then conn:Disconnect() end
+                if uisConn then uisConn:Disconnect() end
+                if sideConn then sideConn:Disconnect() end
                 local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end
                 f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snap))
                 saveConfig(nil,false)
+            end
+            uisConn=UserInputService.InputBegan:Connect(function(inp,gp)
+                if inp.UserInputType==Enum.UserInputType.Keyboard then
+                    if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
+                        finish(nil)
+                    else finish({type="key",value=inp.KeyCode}) end
+                elseif isMouseButton(inp.UserInputType) then finish({type="mouse",value=inp.UserInputType})
+                end
             end)
+            sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
         end)
         local trigConn = UserInputService.InputBegan:Connect(function(inp,gp)
             if gp or listening then return end
             if tick()-lastTrig<0.2 then return end
             if matchesBind(curBind, inp) then lastTrig=tick(); if entry.callback then entry.callback() end end
         end); table.insert(activeInputConnections, trigConn)
+        local sideTrig = SideButtons.onBegan(function(name)
+            if listening then return end
+            if not (curBind and curBind.type=="side" and curBind.name==name) then return end
+            if tick()-lastTrig<0.2 then return end
+            lastTrig=tick(); if entry.callback then entry.callback() end
+        end); table.insert(activeInputConnections, sideTrig)
         bindings[entry.label or ("Bind "..i)] = {
             getBind = function() return curBind end,
             setBind = function(s) local b=stringToBind(s); curBind=b; kbBtn.Text=bindToString(curBind) end,
@@ -2328,7 +2441,8 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     settingsBtn.MouseLeave:Connect(function() createTween(settingsBtn,{BackgroundTransparency=0.35,TextColor3=COLORS.TEXT_MUTED}) end)
     closeBtn.MouseButton1Click:Connect(function()
         for _,c in ipairs(activeInputConnections) do
-            if c and typeof(c)=="RBXScriptConnection" and c.Connected then pcall(function() c:Disconnect() end) end
+            if c and typeof(c)=="RBXScriptConnection" and c.Connected then pcall(function() c:Disconnect() end)
+            elseif type(c)=="table" and type(c.Disconnect)=="function" then pcall(function() c:Disconnect() end) end
         end
         activeInputConnections={}; sg:Destroy()
     end)
