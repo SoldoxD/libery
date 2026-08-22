@@ -1040,6 +1040,15 @@ end
 local function isMouseButton(uit)
     return typeof(uit)=="EnumItem" and uit.EnumType==Enum.UserInputType and mouseName(uit)~=nil
 end
+-- The left mouse button is never bindable: binding it makes every click fire
+-- the keybind, and you can no longer click anything (including "unbind") — it
+-- locks you out of the whole GUI.
+local function isBindableMouse(uit)
+    return isMouseButton(uit) and uit~=Enum.UserInputType.MouseButton1
+end
+local function bindIsBanned(b)
+    return b~=nil and b.type=="mouse" and b.value==Enum.UserInputType.MouseButton1
+end
 local function bindToString(b)
     if not b then return "None" end
     if b.type=="key"  then return b.value.Name end
@@ -1092,15 +1101,15 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
     end
     local function setKeybind(v)
         if v==nil or v==false or v=="None" or v=="" then curBind=nil; commit(); return true end
+        local b
         if typeof(v)=="EnumItem" then
-            if v.EnumType==Enum.KeyCode then curBind={type="key",value=v}; commit(); return true
-            elseif isMouseButton(v) then
-                curBind={type="mouse",value=v}; commit(); return true end
-            return false
+            if v.EnumType==Enum.KeyCode then b={type="key",value=v}
+            elseif isMouseButton(v) then b={type="mouse",value=v} end
+        elseif type(v)=="string" then
+            b=stringToBind(v)
         end
-        if type(v)=="string" then
-            local b=stringToBind(v); if b then curBind=b; commit(); return true end
-        end
+        if bindIsBanned(b) then curBind=nil; commit(); return true end  -- drop stuck MB1 binds
+        if b then curBind=b; commit(); return true end
         return false
     end
     commit()
@@ -1111,7 +1120,6 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         -- While listening we want to grab the key even when the pointer is over
         -- the GUI, so you no longer have to tab out for it to register.
         local uisConn, sideConn, done
-        local startT=tick()
         local function finish(newBind)
             if done then return end; done=true
             curBind=newBind; commit()
@@ -1127,22 +1135,29 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
                 else
                     finish({type="key",value=inp.KeyCode})
                 end
-            elseif isMouseButton(inp.UserInputType) then
-                -- ignore the click that opened this listener so the keybind
-                -- doesn't instantly bind to MB1 before a key can be pressed
-                if inp.UserInputType==Enum.UserInputType.MouseButton1 and tick()-startT<0.3 then return end
+            elseif isBindableMouse(inp.UserInputType) then
+                -- MB1 is intentionally NOT bindable (see isBindableMouse); this
+                -- also means the click that opened the listener is ignored.
                 finish({type="mouse",value=inp.UserInputType})
             end
         end)
         -- MB4 / MB5 come from the OS poll, not UserInputService.
         sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
     end)
-    -- Fire even when gameProcessedEvent is true (on Real the GUI being focused
-    -- sets gp=true for keyboard, which used to swallow every key press). Only
-    -- skip while the user is actually typing in a text box.
+    -- Right-click the keybind button to clear it — a reliable unbind that never
+    -- depends on the bound input, so you can always recover from a bad bind.
+    kbBtn.MouseButton2Click:Connect(function()
+        if listening then return end
+        setKeybind(nil); if not isInitializing then saveConfig(nil,false) end
+    end)
+    -- Keyboard binds fire even when gameProcessedEvent is true (on Real the GUI
+    -- being focused sets gp=true for keyboard, which used to swallow every key),
+    -- skipping only while a text box is focused. Mouse binds still respect gp so
+    -- a click on the GUI itself never fires the bind.
     local kbConn=UserInputService.InputBegan:Connect(function(inp,gp)
         if listening then return end
         if UserInputService:GetFocusedTextBox() then return end
+        if curBind and curBind.type=="mouse" and gp then return end
         if tick()-lastTrig<0.2 then return end
         if matchesBind(curBind, inp) then lastTrig=tick(); if callback then callback() end end
     end); table.insert(activeInputConnections,kbConn)
@@ -1574,7 +1589,7 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
         local curBind
         if typeof(entry.default)=="EnumItem" then
             if entry.default.EnumType==Enum.KeyCode then curBind={type="key",value=entry.default}
-            elseif isMouseButton(entry.default) then
+            elseif isBindableMouse(entry.default) then
                 curBind={type="mouse",value=entry.default} end
         end
         kbBtn.Text = bindToString(curBind)
@@ -1585,7 +1600,6 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
             -- Same as CreateKeybind: don't ignore gp while listening, so the key
             -- is captured without needing to tab out of the GUI.
             local uisConn, sideConn, done
-            local startT=tick()
             local function finish(nb)
                 if done then return end; done=true
                 curBind=nb; kbBtn.Text=bindToString(curBind)
@@ -1601,16 +1615,23 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
                     if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
                         finish(nil)
                     else finish({type="key",value=inp.KeyCode}) end
-                elseif isMouseButton(inp.UserInputType) then
-                    if inp.UserInputType==Enum.UserInputType.MouseButton1 and tick()-startT<0.3 then return end
+                elseif isBindableMouse(inp.UserInputType) then  -- MB1 never bindable
                     finish({type="mouse",value=inp.UserInputType})
                 end
             end)
             sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
         end)
+        kbBtn.MouseButton2Click:Connect(function()  -- right-click to clear
+            if listening then return end
+            curBind=nil; kbBtn.Text=bindToString(curBind)
+            local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end
+            f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snap))
+            if not isInitializing then saveConfig(nil,false) end
+        end)
         local trigConn = UserInputService.InputBegan:Connect(function(inp,gp)
             if listening then return end
             if UserInputService:GetFocusedTextBox() then return end
+            if curBind and curBind.type=="mouse" and gp then return end
             if tick()-lastTrig<0.2 then return end
             if matchesBind(curBind, inp) then lastTrig=tick(); if entry.callback then entry.callback() end end
         end); table.insert(activeInputConnections, trigConn)
@@ -1622,7 +1643,7 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
         end); table.insert(activeInputConnections, sideTrig)
         bindings[entry.label or ("Bind "..i)] = {
             getBind = function() return curBind end,
-            setBind = function(s) local b=stringToBind(s); curBind=b; kbBtn.Text=bindToString(curBind) end,
+            setBind = function(s) local b=stringToBind(s); if bindIsBanned(b) then b=nil end; curBind=b; kbBtn.Text=bindToString(curBind) end,
             kbBtn = kbBtn,
             callback = entry.callback,
         }
