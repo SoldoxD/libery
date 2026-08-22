@@ -762,9 +762,10 @@ end
 function GuiLibrary:CreateLabel(tab, text)
     text = text or ""
     local lbl=Instance.new("TextLabel"); lbl.Name=text.."Label"
-    lbl.Size=UDim2.new(1,0,0,26); lbl.BackgroundTransparency=1; lbl.Text=text
+    lbl.Size=UDim2.new(1,0,0,18); lbl.BackgroundTransparency=1; lbl.Text=text
     lbl.TextColor3=COLORS.TEXT_MUTED; lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
-    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=tab.Content
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.TextYAlignment=Enum.TextYAlignment.Center
+    lbl.Parent=tab.Content
     local p=Instance.new("UIPadding"); p.PaddingLeft=UDim.new(0,14); p.Parent=lbl
     table.insert(tab.Elements,lbl)
     local api
@@ -2311,44 +2312,106 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         if fpsLbl.Visible then fpsLbl.Text="FPS "..math.round(1/dt) end
     end); table.insert(activeInputConnections,fpsConn)
     tb.Active=true; mf.Active=true
-    local dragActive=false; local dragStart=Vector3.new(); local dragOrigPos=Vector2.new()
+    local dragActive=false; local dragStart=Vector2.new(); local dragOrigPos=Vector2.new()
     local dragInput=nil
-    local function isOverButton(btn, m)
-        local bp=btn.AbsolutePosition; local bs=btn.AbsoluteSize
-        return m.X>=bp.X and m.X<=bp.X+bs.X and m.Y>=bp.Y and m.Y<=bp.Y+bs.Y
+    -- Keep the window on-screen so its title bar can never be dragged out of
+    -- reach. The old code had no clamp, so the bar could slide past the top
+    -- edge and the window got "stuck" in a corner with nothing left to grab.
+    -- Works in Position.Offset space, converting through the ScreenGui's
+    -- constant inset delta so it is correct regardless of GuiInset.
+    local function clampOffset(offX, offY, w, h)
+        local cam=workspace.CurrentCamera
+        local vp=(cam and cam.ViewportSize) or sg.AbsoluteSize
+        w = w or mf.AbsoluteSize.X; h = h or mf.AbsoluteSize.Y
+        local m=6
+        local cx=mf.Position.X.Offset - mf.AbsolutePosition.X
+        local cy=mf.Position.Y.Offset - mf.AbsolutePosition.Y
+        local sx=math.clamp(offX-cx, m, math.max(m, vp.X - w - m))
+        local sy=math.clamp(offY-cy, m, math.max(m, vp.Y - h - m))
+        return sx+cx, sy+cy
     end
-    tb.InputBegan:Connect(function(inp)
-        if inp.UserInputType~=Enum.UserInputType.MouseButton1 and inp.UserInputType~=Enum.UserInputType.Touch then return end
-        if not mf.Visible then return end
-        if window.LockPosition then return end
-        -- Use the input's own position so touch/mouse start from the exact press point.
-        local m=inp.Position
-        if isOverButton(settingsBtn,m) or isOverButton(closeBtn,m) or isOverButton(minBtn,m) then return end
-        dragActive=true
-        dragInput=inp
-        dragStart=inp.Position
-        dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
-    end)
-    -- Track the active movement input (the same touch/mouse-move object) for this drag.
-    tb.InputChanged:Connect(function(inp)
-        if inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch then
-            dragInput=inp
+    window.ClampOffset=clampOffset
+    -- Drag from anywhere on the window, not only the title bar, EXCEPT when the
+    -- press lands on a real control (button / textbox / slider / colour widget)
+    -- so nothing that used to be clickable starts dragging the window instead.
+    local dragMoved=false
+    local NODRAG_CLASS={TextButton=true, ImageButton=true, TextBox=true}
+    local NODRAG_WIDGET={Slider=true, ColorPicker=true, ColorGradient=true}
+    local function shown(d)
+        local p=d
+        while p and p~=mf do
+            if p:IsA("GuiObject") and not p.Visible then return false end
+            p=p.Parent
         end
-    end)
+        return p==mf
+    end
+    -- true if d sits anywhere inside a drag-based widget (slider / colour picker
+    -- / gradient), including their pop-out panels that extend past the row.
+    local function inNoDragWidget(d)
+        local p=d
+        while p and p~=mf do
+            if NODRAG_WIDGET[p:GetAttribute("WidgetType")] then return true end
+            p=p.Parent
+        end
+        return false
+    end
+    local function pointOverControl(px, py)
+        for _,d in ipairs(mf:GetDescendants()) do
+            if d:IsA("GuiObject") and d.Visible then
+                local ap,as=d.AbsolutePosition, d.AbsoluteSize
+                if as.X>0 and as.Y>0 and px>=ap.X and px<=ap.X+as.X and py>=ap.Y and py<=ap.Y+as.Y and shown(d) then
+                    if NODRAG_CLASS[d.ClassName] or inNoDragWidget(d) then return true end
+                end
+            end
+        end
+        return false
+    end
+    -- Begin a drag from a global input hook rather than a frame event, so it
+    -- works no matter which inner frame "sinks" the press (title bar, content
+    -- container, scroll frame): we simply test the press is inside the window
+    -- and not on a control.
+    local beginConn=UserInputService.InputBegan:Connect(function(inp)
+        if inp.UserInputType~=Enum.UserInputType.MouseButton1 and inp.UserInputType~=Enum.UserInputType.Touch then return end
+        if not mf.Visible or window.LockPosition or dragActive then return end
+        local px,py=inp.Position.X, inp.Position.Y
+        local ap,as=mf.AbsolutePosition, mf.AbsoluteSize
+        if px<ap.X or px>ap.X+as.X or py<ap.Y or py>ap.Y+as.Y then return end
+        if pointOverControl(px,py) then return end
+        dragActive=true; dragMoved=false
+        dragInput=inp
+        dragStart=Vector2.new(px, py)
+        dragOrigPos=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
+    end); table.insert(activeInputConnections,beginConn)
     local dragEndConn=UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
             if dragActive then
                 dragActive=false
-                if not isInitializing then saveConfig(nil,false) end
+                if dragMoved then
+                    window.LastOffset=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
+                    if not isInitializing then saveConfig(nil,false) end
+                end
             end
         end
     end); table.insert(activeInputConnections,dragEndConn)
+    -- Follow any mouse movement while dragging (not just the exact input object),
+    -- so a fast drag that leaves the window doesn't stall; touch tracks its own
+    -- finger. Every move is clamped back on-screen.
     local dragMoveConn=UserInputService.InputChanged:Connect(function(inp)
-        if dragActive and inp==dragInput then
-            local d=inp.Position-dragStart
-            mf.Position=UDim2.new(0, dragOrigPos.X+d.X, 0, dragOrigPos.Y+d.Y)
+        if not dragActive then return end
+        if inp.UserInputType==Enum.UserInputType.MouseMovement or inp==dragInput then
+            dragMoved=true
+            local x=dragOrigPos.X + (inp.Position.X - dragStart.X)
+            local y=dragOrigPos.Y + (inp.Position.Y - dragStart.Y)
+            x,y=clampOffset(x,y)
+            mf.Position=UDim2.new(0, x, 0, y)
         end
     end); table.insert(activeInputConnections,dragMoveConn)
+    local vpConn=workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+        if mf.Visible and not dragActive then
+            local nx,ny=clampOffset(mf.Position.X.Offset, mf.Position.Y.Offset)
+            mf.Position=UDim2.new(0,nx,0,ny)
+        end
+    end); table.insert(activeInputConnections,vpConn)
     local resizing=false; local resStart=Vector3.new(); local resStartSz=Vector2.new()
     local resInput=nil
     local minW,minH=380,280
@@ -2375,11 +2438,16 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
             local d=inp.Position-resStart
             local nw=math.max(resStartSz.X+d.X,minW); local nh=math.max(resStartSz.Y+d.Y,minH)
             mf.Size=UDim2.new(0,nw,0,nh); window.CurrentSize=mf.Size
+            -- keep the grown window from spilling off-screen
+            local nx,ny=clampOffset(mf.Position.X.Offset, mf.Position.Y.Offset, nw, nh)
+            mf.Position=UDim2.new(0,nx,0,ny)
+            window.LastOffset=Vector2.new(nx,ny)
         end
     end); table.insert(activeInputConnections,resMoveConn)
     local function hideWindow()
         if not isVisible then return end; isVisible=false
         window.CurrentSize=mf.Size
+        window.LastOffset=Vector2.new(mf.Position.X.Offset, mf.Position.Y.Offset)
         local curAbsPos=mf.AbsolutePosition; local curAbsSz=mf.AbsoluteSize
         createTween(mf,{
             Size=UDim2.new(0,0,0,0),
@@ -2392,12 +2460,19 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         if isVisible then return end; isVisible=true
         mf.Visible=true
         local sz=window.CurrentSize
-        local vp=workspace.CurrentCamera.ViewportSize
-        local cx=math.max((vp.X-sz.X.Offset)/2,0); local cy=math.max((vp.Y-sz.Y.Offset)/2,0)
-        mf.Size=UDim2.new(0,0,0,0); mf.Position=UDim2.new(0,cx+sz.X.Offset/2,0,cy+sz.Y.Offset/2)
+        -- Reopen where the user last left it, not re-centred every time.
+        local ox, oy
+        if window.LastOffset then
+            ox, oy = window.LastOffset.X, window.LastOffset.Y
+        else
+            local vp=workspace.CurrentCamera.ViewportSize
+            ox=math.max((vp.X-sz.X.Offset)/2,0); oy=math.max((vp.Y-sz.Y.Offset)/2,0)
+        end
+        ox, oy = clampOffset(ox, oy, sz.X.Offset, sz.Y.Offset)
+        mf.Size=UDim2.new(0,0,0,0); mf.Position=UDim2.new(0,ox+sz.X.Offset/2,0,oy+sz.Y.Offset/2)
         mf.BackgroundTransparency=1
         local backInfo=TweenInfo.new(ANIM_TIME+0.08,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
-        TweenService:Create(mf,backInfo,{Size=sz,Position=UDim2.new(0,cx,0,cy),BackgroundTransparency=0}):Play()
+        TweenService:Create(mf,backInfo,{Size=sz,Position=UDim2.new(0,ox,0,oy),BackgroundTransparency=0}):Play()
     end
     local function switchToTab(targetName)
         if window.CurrentTab==targetName then return end
@@ -2499,6 +2574,9 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         targetX = math.max((vp.X-sz.X.Offset)/2,0)
         targetY = math.max((vp.Y-sz.Y.Offset)/2,0)
     end
+    -- never open off-screen (e.g. a stale saved position from a bigger monitor)
+    targetX, targetY = clampOffset(targetX, targetY, sz.X.Offset, sz.Y.Offset)
+    window.LastOffset=Vector2.new(targetX, targetY)
     mf.Size=UDim2.new(0,0,0,0)
     mf.Position=UDim2.new(0, targetX+sz.X.Offset/2, 0, targetY+sz.Y.Offset/2)
     local openInfo=TweenInfo.new(0.55,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
