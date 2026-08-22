@@ -762,7 +762,7 @@ end
 function GuiLibrary:CreateLabel(tab, text)
     text = text or ""
     local lbl=Instance.new("TextLabel"); lbl.Name=text.."Label"
-    lbl.Size=UDim2.new(1,0,0,18); lbl.BackgroundTransparency=1; lbl.Text=text
+    lbl.Size=UDim2.new(1,0,0,13); lbl.BackgroundTransparency=1; lbl.Text=text
     lbl.TextColor3=COLORS.TEXT_MUTED; lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.TextYAlignment=Enum.TextYAlignment.Center
     lbl.Parent=tab.Content
@@ -1111,6 +1111,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         -- While listening we want to grab the key even when the pointer is over
         -- the GUI, so you no longer have to tab out for it to register.
         local uisConn, sideConn, done
+        local startT=tick()
         local function finish(newBind)
             if done then return end; done=true
             curBind=newBind; commit()
@@ -1127,14 +1128,21 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
                     finish({type="key",value=inp.KeyCode})
                 end
             elseif isMouseButton(inp.UserInputType) then
+                -- ignore the click that opened this listener so the keybind
+                -- doesn't instantly bind to MB1 before a key can be pressed
+                if inp.UserInputType==Enum.UserInputType.MouseButton1 and tick()-startT<0.3 then return end
                 finish({type="mouse",value=inp.UserInputType})
             end
         end)
         -- MB4 / MB5 come from the OS poll, not UserInputService.
         sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
     end)
+    -- Fire even when gameProcessedEvent is true (on Real the GUI being focused
+    -- sets gp=true for keyboard, which used to swallow every key press). Only
+    -- skip while the user is actually typing in a text box.
     local kbConn=UserInputService.InputBegan:Connect(function(inp,gp)
-        if gp or listening then return end
+        if listening then return end
+        if UserInputService:GetFocusedTextBox() then return end
         if tick()-lastTrig<0.2 then return end
         if matchesBind(curBind, inp) then lastTrig=tick(); if callback then callback() end end
     end); table.insert(activeInputConnections,kbConn)
@@ -1577,6 +1585,7 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
             -- Same as CreateKeybind: don't ignore gp while listening, so the key
             -- is captured without needing to tab out of the GUI.
             local uisConn, sideConn, done
+            local startT=tick()
             local function finish(nb)
                 if done then return end; done=true
                 curBind=nb; kbBtn.Text=bindToString(curBind)
@@ -1592,13 +1601,16 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
                     if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
                         finish(nil)
                     else finish({type="key",value=inp.KeyCode}) end
-                elseif isMouseButton(inp.UserInputType) then finish({type="mouse",value=inp.UserInputType})
+                elseif isMouseButton(inp.UserInputType) then
+                    if inp.UserInputType==Enum.UserInputType.MouseButton1 and tick()-startT<0.3 then return end
+                    finish({type="mouse",value=inp.UserInputType})
                 end
             end)
             sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
         end)
         local trigConn = UserInputService.InputBegan:Connect(function(inp,gp)
-            if gp or listening then return end
+            if listening then return end
+            if UserInputService:GetFocusedTextBox() then return end
             if tick()-lastTrig<0.2 then return end
             if matchesBind(curBind, inp) then lastTrig=tick(); if entry.callback then entry.callback() end end
         end); table.insert(activeInputConnections, trigConn)
@@ -2014,7 +2026,7 @@ function GuiLibrary:CreateSettingsTab(window)
     tabContent.BorderSizePixel=0; tabContent.ScrollBarThickness=4
     tabContent.ScrollBarImageColor3=COLORS.ACCENT; tabContent.Visible=false
     tabContent.Parent=window.TabContentContainer
-    local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,8); cl.Parent=tabContent
+    local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,5); cl.Parent=tabContent
     local cp=Instance.new("UIPadding"); cp.PaddingTop=UDim.new(0,12); cp.PaddingLeft=UDim.new(0,12); cp.PaddingRight=UDim.new(0,12); cp.PaddingBottom=UDim.new(0,12); cp.Parent=tabContent
     local function updateSettingsCanvas()
         local extraH = cp.PaddingTop.Offset + cp.PaddingBottom.Offset
@@ -2611,7 +2623,7 @@ function GuiLibrary:CreateTab(window, name)
     tabScroll.BorderSizePixel=0; tabScroll.ScrollBarThickness=4
     tabScroll.ScrollBarImageColor3=COLORS.ACCENT; tabScroll.Visible=false
     tabScroll.Parent=window.TabContentContainer
-    local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,8); cl.Parent=tabScroll
+    local cl=Instance.new("UIListLayout"); cl.SortOrder=Enum.SortOrder.LayoutOrder; cl.Padding=UDim.new(0,5); cl.Parent=tabScroll
     local cp=Instance.new("UIPadding"); cp.PaddingTop=UDim.new(0,12); cp.PaddingLeft=UDim.new(0,12); cp.PaddingRight=UDim.new(0,12); cp.PaddingBottom=UDim.new(0,12); cp.Parent=tabScroll
     local function updateCanvas()
         local extraH = cp.PaddingTop.Offset + cp.PaddingBottom.Offset
