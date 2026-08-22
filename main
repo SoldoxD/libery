@@ -1,5 +1,5 @@
 -- Made by Soldo / Discord: cyber_modz
-
+print("1")
 local GuiLibrary = {}
 local TweenService    = game:GetService("TweenService")
 local UserInputService= game:GetService("UserInputService")
