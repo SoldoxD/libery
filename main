@@ -1,5 +1,5 @@
 -- Made by Soldo / Discord: cyber_modz
-print("1")
+
 local GuiLibrary = {}
 local TweenService    = game:GetService("TweenService")
 local UserInputService= game:GetService("UserInputService")
@@ -1049,6 +1049,24 @@ end
 local function bindIsBanned(b)
     return b~=nil and b.type=="mouse" and b.value==Enum.UserInputType.MouseButton1
 end
+-- Map a typed character back to a KeyCode. On the Real executor the keyboard is
+-- delivered as TextInput into a focused TextBox (not as Keyboard/InputBegan), so
+-- when capturing a keybind we read the character the box received and turn it
+-- into a bindable key — letting keys register without tabbing out of the GUI.
+local DIGIT_KC = {["0"]="Zero",["1"]="One",["2"]="Two",["3"]="Three",["4"]="Four",
+                  ["5"]="Five",["6"]="Six",["7"]="Seven",["8"]="Eight",["9"]="Nine"}
+local function charToKeyCode(ch)
+    if type(ch)~="string" or ch=="" then return nil end
+    if ch==" " then return Enum.KeyCode.Space end
+    local up=ch:upper()
+    local name
+    if up:match("^%a$") then name=up
+    elseif DIGIT_KC[ch] then name=DIGIT_KC[ch] end
+    if not name then return nil end
+    local ok, kc = pcall(function() return Enum.KeyCode[name] end)
+    if ok and kc then return kc end
+    return nil
+end
 local function bindToString(b)
     if not b then return "None" end
     if b.type=="key"  then return b.value.Name end
@@ -1119,30 +1137,46 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         -- NOTE: we deliberately do NOT ignore gameProcessedEvent (gp) here.
         -- While listening we want to grab the key even when the pointer is over
         -- the GUI, so you no longer have to tab out for it to register.
-        local uisConn, sideConn, done
+        local uisConn, sideConn, textConn, focusConn, box, done
         local function finish(newBind)
             if done then return end; done=true
             curBind=newBind; commit()
             listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
             if uisConn then uisConn:Disconnect() end
             if sideConn then sideConn:Disconnect() end
+            if textConn then textConn:Disconnect() end
+            if focusConn then focusConn:Disconnect() end
+            if box then box:Destroy() end
             saveConfig(nil,false)
         end
+        -- On Real, letters/numbers arrive as TextInput (into a focused TextBox),
+        -- while numpad / F-keys / mouse arrive through InputBegan — so we listen
+        -- on BOTH. A hidden box grabs the typed character (mapped back to a
+        -- KeyCode); InputBegan handles the rest. (Modifier keys — Shift/Ctrl/Alt
+        -- — send no readable input on Real and cannot be bound.)
+        box=Instance.new("TextBox")
+        box.Size=UDim2.new(0,1,0,1); box.BackgroundTransparency=1; box.TextTransparency=1
+        box.Text=""; box.ClearTextOnFocus=false; box.MultiLine=false; box.Parent=f
+        textConn=box:GetPropertyChangedSignal("Text"):Connect(function()
+            local t=box.Text; if t=="" then return end
+            local kc=charToKeyCode(t:sub(-1)); box.Text=""
+            if kc then finish({type="key",value=kc}) end
+        end)
+        focusConn=box.FocusLost:Connect(function(_, inp)
+            if inp and inp.KeyCode==Enum.KeyCode.Escape then finish(nil) end
+        end)
         uisConn=UserInputService.InputBegan:Connect(function(inp,gp)
             if inp.UserInputType==Enum.UserInputType.Keyboard then
-                if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
-                    finish(nil)
-                else
-                    finish({type="key",value=inp.KeyCode})
-                end
-            elseif isBindableMouse(inp.UserInputType) then
-                -- MB1 is intentionally NOT bindable (see isBindableMouse); this
-                -- also means the click that opened the listener is ignored.
+                local kc=inp.KeyCode
+                if kc==Enum.KeyCode.Backspace or kc==Enum.KeyCode.Delete or kc==Enum.KeyCode.Escape then finish(nil)
+                elseif kc~=Enum.KeyCode.Unknown then finish({type="key",value=kc}) end
+            elseif isBindableMouse(inp.UserInputType) then  -- MB1 never bindable (locks you out)
                 finish({type="mouse",value=inp.UserInputType})
             end
         end)
-        -- MB4 / MB5 come from the OS poll, not UserInputService.
         sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
+        task.defer(function() if not done and box then pcall(function() box:CaptureFocus() end) end end)
+        task.delay(10, function() finish(curBind) end)  -- auto-cancel if nothing pressed
     end)
     -- Right-click the keybind button to clear it — a reliable unbind that never
     -- depends on the bound input, so you can always recover from a bad bind.
@@ -1599,27 +1633,43 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
             createTween(kbBtn,{BackgroundColor3=COLORS.WARNING})
             -- Same as CreateKeybind: don't ignore gp while listening, so the key
             -- is captured without needing to tab out of the GUI.
-            local uisConn, sideConn, done
+            local uisConn, sideConn, textConn, focusConn, box, done
             local function finish(nb)
                 if done then return end; done=true
                 curBind=nb; kbBtn.Text=bindToString(curBind)
                 listening=false; createTween(kbBtn,{BackgroundColor3=COLORS.PRIMARY})
                 if uisConn then uisConn:Disconnect() end
                 if sideConn then sideConn:Disconnect() end
+                if textConn then textConn:Disconnect() end
+                if focusConn then focusConn:Disconnect() end
+                if box then box:Destroy() end
                 local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end
                 f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snap))
                 saveConfig(nil,false)
             end
+            box=Instance.new("TextBox")  -- catches letters/numbers (TextInput on Real)
+            box.Size=UDim2.new(0,1,0,1); box.BackgroundTransparency=1; box.TextTransparency=1
+            box.Text=""; box.ClearTextOnFocus=false; box.MultiLine=false; box.Parent=kbBtn
+            textConn=box:GetPropertyChangedSignal("Text"):Connect(function()
+                local t=box.Text; if t=="" then return end
+                local kc=charToKeyCode(t:sub(-1)); box.Text=""
+                if kc then finish({type="key",value=kc}) end
+            end)
+            focusConn=box.FocusLost:Connect(function(_, inp)
+                if inp and inp.KeyCode==Enum.KeyCode.Escape then finish(nil) end
+            end)
             uisConn=UserInputService.InputBegan:Connect(function(inp,gp)
                 if inp.UserInputType==Enum.UserInputType.Keyboard then
-                    if inp.KeyCode==Enum.KeyCode.Backspace or inp.KeyCode==Enum.KeyCode.Delete or inp.KeyCode==Enum.KeyCode.Escape then
-                        finish(nil)
-                    else finish({type="key",value=inp.KeyCode}) end
+                    local kc=inp.KeyCode
+                    if kc==Enum.KeyCode.Backspace or kc==Enum.KeyCode.Delete or kc==Enum.KeyCode.Escape then finish(nil)
+                    elseif kc~=Enum.KeyCode.Unknown then finish({type="key",value=kc}) end
                 elseif isBindableMouse(inp.UserInputType) then  -- MB1 never bindable
                     finish({type="mouse",value=inp.UserInputType})
                 end
             end)
             sideConn=SideButtons.onBegan(function(name) finish({type="side",name=name}) end)
+            task.defer(function() if not done and box then pcall(function() box:CaptureFocus() end) end end)
+            task.delay(10, function() finish(curBind) end)
         end)
         kbBtn.MouseButton2Click:Connect(function()  -- right-click to clear
             if listening then return end
