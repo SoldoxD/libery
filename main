@@ -1,10 +1,20 @@
 -- Made by Soldo / Discord: cyber_modz
 
-local GuiLibrary = {}
-local TweenService    = game:GetService("TweenService")
-local UserInputService= game:GetService("UserInputService")
-local RunService      = game:GetService("RunService")
-local HttpService     = game:GetService("HttpService")
+local GuiLibrary = { CurrentWindow = nil }
+local function getService(name)
+    local service = game:GetService(name)
+    if type(cloneref)=="function" then
+        local ok, ref = pcall(cloneref, service)
+        if ok and ref then service = ref end
+    end
+    return service
+end
+
+local TweenService     = getService("TweenService")
+local UserInputService = getService("UserInputService")
+local RunService       = getService("RunService")
+local HttpService      = getService("HttpService")
+local CoreGui          = getService("CoreGui")
 local ANIM_TIME      = 0.25
 local EASING_STYLE   = Enum.EasingStyle.Quart
 local EASING_DIR     = Enum.EasingDirection.Out
@@ -31,6 +41,7 @@ GuiLibrary.debugPrints = false
 GuiLibrary.Icon = nil
 local function dprint(...) if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end end
 local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
+local MAX_CONFIG_BYTES   = 1024*1024
 local currentPlaceId     = tostring(game.PlaceId)
 local activeProfile      = "default"
 local elementSetters     = {}
@@ -40,6 +51,52 @@ local dropdownClosers    = {}
 local restorationQueue   = {}
 local isInitializing     = false
 local activeInputConnections = {}
+local libraryConnections = {}
+local rootGuis = {}
+
+local function disconnectConnection(connection)
+    if not connection then return end
+    if typeof(connection)=="RBXScriptConnection" then
+        if connection.Connected then pcall(function() connection:Disconnect() end) end
+    elseif type(connection)=="table" and type(connection.Disconnect)=="function" then
+        pcall(connection.Disconnect)
+    end
+end
+
+local function disconnectConnections(connections)
+    for i=#connections,1,-1 do
+        disconnectConnection(connections[i])
+        connections[i]=nil
+    end
+end
+
+local function safeCall(callback, ...)
+    if type(callback)~="function" then return true, nil end
+    local ok, result = pcall(callback, ...)
+    if not ok then warn("[GuiLibrary] Callback failed: "..tostring(result)) end
+    return ok, result
+end
+
+-- CoreGui is the primary parent as requested. gethui is only a compatibility
+-- fallback when an executor denies direct CoreGui parenting.
+local function parentToCoreGui(screenGui)
+    local ok, err = pcall(function() screenGui.Parent=CoreGui end)
+    if not ok and type(gethui)=="function" then
+        local huiOk, hui = pcall(gethui)
+        if huiOk and hui then
+            ok, err = pcall(function() screenGui.Parent=hui end)
+        end
+    end
+    if not ok then
+        pcall(function() screenGui:Destroy() end)
+        warn("[GuiLibrary] Unable to parent ScreenGui: "..tostring(err))
+        return false
+    end
+    screenGui.Archivable=false
+    rootGuis[screenGui]=true
+    screenGui.Destroying:Connect(function() rootGuis[screenGui]=nil end)
+    return true
+end
 
 -- ── Extended mouse button (MB4 / MB5) support ────────────────────────────────
 -- Roblox's UserInputService only reports MouseButton1-3, so the two side
@@ -103,7 +160,7 @@ do
                 end
             end
         end)
-        table.insert(activeInputConnections, pollConn)
+        table.insert(libraryConnections, pollConn)
     end
 
     -- Escape hatch: if your executor exposes the key-state reader under a name we
@@ -122,8 +179,14 @@ do
 end
 GuiLibrary.SideButtons = SideButtons
 
+local function sanitizeProfileName(name)
+    name=tostring(name or ""):gsub("^%s+",""):gsub("%s+$","")
+    name=name:gsub("[^%w _%-]","_"):sub(1,64)
+    if name=="" or name:lower()=="_active" then return "default" end
+    return name
+end
 local function getPlaceFolder() return AUTO_SAVE_FOLDER .. "/" .. currentPlaceId end
-local function getProfilePath(name) return getPlaceFolder() .. "/" .. name .. ".json" end
+local function getProfilePath(name) return getPlaceFolder() .. "/" .. sanitizeProfileName(name) .. ".json" end
 local function getActivePointerPath() return getPlaceFolder() .. "/_active.txt" end
 local function getAutoSavePath() return getProfilePath(activeProfile) end
 local function ensureProfileFolders()
@@ -138,7 +201,7 @@ local function listProfiles()
         if not isfolder(getPlaceFolder()) then return end
         for _, fname in ipairs(listfiles(getPlaceFolder()) or {}) do
             local n = tostring(fname):match("([^/\\]+)%.json$")
-            if n then table.insert(out, n) end
+            if n and sanitizeProfileName(n)==n then table.insert(out, n) end
         end
     end)
     table.sort(out)
@@ -154,9 +217,10 @@ local function readActivePointer()
         end
     end)
     if not name or name == "" then return nil end
-    return name
+    return sanitizeProfileName(name)
 end
 local function writeActivePointer(name)
+    name=sanitizeProfileName(name)
     ensureProfileFolders()
     pcall(function() writefile(getActivePointerPath(), tostring(name or "default")) end)
 end
@@ -371,14 +435,20 @@ local function saveConfig(window, force)
             if data then table.insert(config.Components,{ID=id,Data=data}) end
         end
     end
-    local jsonStr = HttpService:JSONEncode(config)
+    local encodeOk, jsonStr = pcall(function() return HttpService:JSONEncode(config) end)
+    if not encodeOk or type(jsonStr)~="string" then
+        warn("[GuiLibrary] Config encode failed: "..tostring(jsonStr))
+        return false
+    end
     local wOk,wErr=pcall(function() writefile(getAutoSavePath(), jsonStr) end)
     if wOk then
         dprint(string.format("Config saved → %s | profile=%s, components=%d, size=%dx%d, pos=(%d,%d)",
             getAutoSavePath(), activeProfile, #config.Components,
             config.SizeWidth, config.SizeHeight, config.PosX, config.PosY))
+        return true
     else
         warn("[GuiLibrary] Save failed: "..tostring(wErr))
+        return false
     end
 end
 GuiLibrary.SaveConfig = saveConfig
@@ -389,26 +459,33 @@ local function loadConfig(window)
     dprint("loadConfig: profile="..activeProfile.." path="..getAutoSavePath().." exists="..tostring(fileExists))
     if not fileExists then dprint("No profile file → using defaults"); return false end
     local rawData; pcall(function() rawData = readfile(getAutoSavePath()) end)
+    if type(rawData)~="string" or #rawData>MAX_CONFIG_BYTES then
+        warn("[GuiLibrary] Config is missing, invalid, or larger than 1 MiB")
+        return false
+    end
     dprint("loadConfig: raw bytes = "..(rawData and #rawData or 0))
     local rOk,config=pcall(function() return HttpService:JSONDecode(rawData) end)
-    if not rOk or not config then warn("[GuiLibrary] JSON parse failed: "..tostring(config)); return false end
+    if not rOk or type(config)~="table" then warn("[GuiLibrary] JSON parse failed: "..tostring(config)); return false end
     dprint(string.format("loadConfig: parsed | components=%d",
         config.Components and #config.Components or 0))
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
     if config.NotificationsEnabled~=nil then GuiLibrary.NotificationsEnabled=config.NotificationsEnabled==true end
-    if config.NotificationDuration then GuiLibrary.NotificationDuration=tonumber(config.NotificationDuration) or 3 end
+    if config.NotificationDuration then GuiLibrary.NotificationDuration=math.clamp(tonumber(config.NotificationDuration) or 3,1,30) end
     if config.LockPosition~=nil then window.LockPosition=config.LockPosition==true end
     if config.ShowFPS~=nil and window.FPSLabel then window.FPSLabel.Visible=config.ShowFPS==true end
     if config.Theme and themes[config.Theme] then for k,v in pairs(themes[config.Theme]) do COLORS[k]=v end end
-    if config.SizeWidth and config.SizeHeight then
-        local ns=UDim2.new(0,config.SizeWidth,0,config.SizeHeight)
+    local savedWidth, savedHeight = tonumber(config.SizeWidth), tonumber(config.SizeHeight)
+    if savedWidth and savedHeight then
+        local ns=UDim2.new(0,math.clamp(savedWidth,380,4096),0,math.clamp(savedHeight,280,2160))
         window.CurrentSize=ns; if window.MainFrame then window.MainFrame.Size=ns end
-    elseif config.UIScale then
-        local ns=UDim2.new(0,600*config.UIScale,0,400*config.UIScale)
+    elseif tonumber(config.UIScale) then
+        local scale=math.clamp(tonumber(config.UIScale) or 1,0.5,4)
+        local ns=UDim2.new(0,600*scale,0,400*scale)
         window.CurrentSize=ns; if window.MainFrame then window.MainFrame.Size=ns end
     end
-    if config.PosX and config.PosY then
-        window.SavedPosition = UDim2.new(0, config.PosX, 0, config.PosY)
+    local savedX, savedY = tonumber(config.PosX), tonumber(config.PosY)
+    if savedX and savedY then
+        window.SavedPosition = UDim2.new(0, math.clamp(savedX,-4096,8192), 0, math.clamp(savedY,-2160,4320))
         if window.MainFrame then window.MainFrame.Position = window.SavedPosition end
     end
     restorationQueue={}
@@ -474,6 +551,8 @@ local function createLoader(parent, size)
     return f
 end
 function GuiLibrary:CreateButton(tab, text, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateButton: invalid tab"); return nil end
+    text=tostring(text or "Button")
     local btn=Instance.new("TextButton"); btn.Name=text.."Button"
     btn.Size=UDim2.new(1,0,0,38); btn.BackgroundColor3=COLORS.ACCENT
     btn.Text=text; btn.TextColor3=Color3.new(1,1,1); btn.TextSize=13
@@ -491,7 +570,7 @@ function GuiLibrary:CreateButton(tab, text, callback)
     btn.MouseButton1Click:Connect(function()
         if callback then
             createTween(btn,{BackgroundColor3=accentDarker()},0.06); task.wait(0.09)
-            createTween(btn,{BackgroundColor3=COLORS.ACCENT},0.18); callback()
+            createTween(btn,{BackgroundColor3=COLORS.ACCENT},0.18); safeCall(callback)
         end
     end)
     btn.MouseEnter:Connect(function() createTween(btn,{BackgroundColor3=accentLighter()}) end)
@@ -512,6 +591,8 @@ function GuiLibrary:CreateButton(tab, text, callback)
     return api
 end
 function GuiLibrary:CreateToggle(tab, text, default, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateToggle: invalid tab"); return nil end
+    text=tostring(text or "Toggle")
     local f=Instance.new("Frame"); f.Name=text.."Toggle"
     f.Size=UDim2.new(1,0,0,40); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
@@ -543,7 +624,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     end
     sw.MouseButton1Click:Connect(function()
         setState(not isToggled)
-        if callback then callback(isToggled) end
+        safeCall(callback,isToggled)
         saveConfig(nil,false)
     end)
     elementSetters[f]=function(v)
@@ -562,6 +643,11 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     return {Frame=f, GetValue=function() return isToggled end, SetValue=setState}
 end
 function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateSlider: invalid tab"); return nil end
+    text=tostring(text or "Slider")
+    min=tonumber(min) or 0; max=tonumber(max) or (min+100)
+    if max<=min then max=min+1 end
+    default=math.clamp(tonumber(default) or min,min,max)
     local f=Instance.new("Frame"); f.Name=text.."Slider"
     f.Size=UDim2.new(1,0,0,54); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
@@ -590,10 +676,10 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local dragging=false; local curPct=0; local dragInput=nil
     local function updateSlider(v, shouldSave)
         if shouldSave==nil then shouldSave=false end
-        cur=math.clamp(v,min,max); curPct=(cur-min)/(max-min)
+        cur=math.clamp(tonumber(v) or cur or min,min,max); curPct=(cur-min)/(max-min)
         fill.Size=UDim2.new(curPct,0,1,0); handle.Position=UDim2.new(curPct,-9,0.5,-9)
         val.Text=string.format("%.1f",cur); f:SetAttribute("SliderValue",cur)
-        if callback then callback(cur) end
+        safeCall(callback,cur)
         if shouldSave and not isInitializing then saveConfig(nil,false) end
     end
     handle.InputBegan:Connect(function(inp)
@@ -641,6 +727,8 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     return {Frame=f, GetValue=function() return cur end, SetValue=function(v) updateSlider(v,false); if not isInitializing then saveConfig(nil,false) end end}
 end
 function GuiLibrary:CreateDropdown(tab, text, options, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateDropdown: invalid tab"); return nil end
+    text=tostring(text or "Dropdown"); if type(options)~="table" then options={} end
     local mf = GuiLibrary.CurrentWindow and GuiLibrary.CurrentWindow.MainFrame
     local dropFrame=Instance.new("Frame"); dropFrame.Name=text.."Dropdown"
     dropFrame.Size=UDim2.new(1,0,0,40); dropFrame.BackgroundColor3=COLORS.HOVER
@@ -699,7 +787,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
             ob.MouseButton1Click:Connect(function()
                 curSel=opt; dropLbl.Text=text..":  "..opt; dropFrame:SetAttribute("DropdownValue",opt)
                 closeInstant()
-                if callback then callback(opt) end; saveConfig(nil,false)
+                safeCall(callback,opt); saveConfig(nil,false)
             end)
             ob.MouseEnter:Connect(function() createTween(ob,{BackgroundTransparency=0.82}); createTween(ol,{TextColor3=COLORS.TEXT}) end)
             ob.MouseLeave:Connect(function() createTween(ob,{BackgroundTransparency=1}); createTween(ol,{TextColor3=COLORS.TEXT_MUTED}) end)
@@ -727,7 +815,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     local function setVal(v)
         if not v then return end
         for _,opt in ipairs(curOpts) do
-            if opt==v then curSel=opt; dropLbl.Text=text..":  "..opt; dropFrame:SetAttribute("DropdownValue",opt); if callback then callback(opt) end; return end
+            if opt==v then curSel=opt; dropLbl.Text=text..":  "..tostring(opt); dropFrame:SetAttribute("DropdownValue",tostring(opt)); safeCall(callback,opt); return end
         end
     end
     local function updateOptions(newOpts, keep)
@@ -739,7 +827,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
             dropLbl.Text=text..":  "..curSel; dropFrame:SetAttribute("DropdownValue",curSel)
         else
             curSel=curOpts[1] or "None"; dropLbl.Text=text..":  "..curSel
-            dropFrame:SetAttribute("DropdownValue",curSel); if callback then callback(curSel) end
+            dropFrame:SetAttribute("DropdownValue",tostring(curSel)); safeCall(callback,curSel)
         end
     end
     dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Dropdown")
@@ -760,6 +848,8 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     return {Frame=dropFrame, GetValue=function() return curSel end, SetValue=setVal, UpdateOptions=updateOptions}
 end
 function GuiLibrary:CreateLabel(tab, text)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateLabel: invalid tab"); return nil end
+    text=tostring(text or "")
     text = text or ""
     local lbl=Instance.new("TextLabel"); lbl.Name=text.."Label"
     lbl.Size=UDim2.new(1,0,0,13); lbl.BackgroundTransparency=1; lbl.Text=text
@@ -789,6 +879,8 @@ function GuiLibrary:CreateLabel(tab, text)
     return api
 end
 function GuiLibrary:CreateSection(tab, title)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateSection: invalid tab"); return nil end
+    title=tostring(title or "Section")
     title = title or ""
     local f=Instance.new("Frame"); f.Name=title.."Section"
     f.Size=UDim2.new(1,0,0,26); f.BackgroundTransparency=1; f.BorderSizePixel=0; f.Parent=tab.Content
@@ -817,6 +909,8 @@ function GuiLibrary:CreateSection(tab, title)
     return api
 end
 function GuiLibrary:CreateInput(tab, placeholder, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateInput: invalid tab"); return nil end
+    placeholder=tostring(placeholder or "")
     local f=Instance.new("Frame"); f.Name=placeholder.."Input"
     f.Size=UDim2.new(1,0,0,40); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
@@ -827,7 +921,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
     local bp=Instance.new("UIPadding"); bp.PaddingLeft=UDim.new(0,8); bp.Parent=box
     box.FocusLost:Connect(function(enter)
         f:SetAttribute("InputValue",box.Text)
-        if callback and enter then callback(box.Text) end; saveConfig(nil,false)
+        if enter then safeCall(callback,box.Text) end; saveConfig(nil,false)
     end)
     box.Focused:Connect(function() createStroke(box,1.5,COLORS.ACCENT) end)
     box.FocusLost:Connect(function() local s=box:FindFirstChildWhichIsA("UIStroke"); if s then s:Destroy() end end)
@@ -835,7 +929,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
     f:SetAttribute("WidgetType","Input"); f:SetAttribute("InputValue","")
     local function setInput(v)
         if type(v)=="string" then box.Text=v; f:SetAttribute("InputValue",v)
-            if callback then callback(v) end; if not isInitializing then saveConfig(nil,false) end end
+            safeCall(callback,v); if not isInitializing then saveConfig(nil,false) end end
     end
     elementSetters[f]=setInput
     elementCallbacks[f]=callback
@@ -956,7 +1050,7 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
             math.floor(curColor.R*255+0.5), math.floor(curColor.G*255+0.5), math.floor(curColor.B*255+0.5))
         alphaLbl.Text=string.format("α %d%%", math.floor((1-transparency)*100+0.5))
         updateMarkers()
-        if callback then callback(curColor, transparency) end
+        safeCall(callback,curColor,transparency)
         if not isInitializing then saveConfig(nil,false) end
     end
     local function setColor(inp, t)
@@ -1094,6 +1188,8 @@ local function matchesBind(b, inp)
     return false
 end
 function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
+    if not tab or not tab.Content then warn("[GuiLibrary] CreateKeybind: invalid tab"); return nil end
+    text=tostring(text or "Keybind")
     local f=Instance.new("Frame"); f.Name=text.."Keybind"
     f.Size=UDim2.new(1,0,0,40); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
@@ -1193,13 +1289,13 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         if UserInputService:GetFocusedTextBox() then return end
         if curBind and curBind.type=="mouse" and gp then return end
         if tick()-lastTrig<0.2 then return end
-        if matchesBind(curBind, inp) then lastTrig=tick(); if callback then callback() end end
+        if matchesBind(curBind, inp) then lastTrig=tick(); safeCall(callback) end
     end); table.insert(activeInputConnections,kbConn)
     local sideTrig=SideButtons.onBegan(function(name)
         if listening then return end
         if not (curBind and curBind.type=="side" and curBind.name==name) then return end
         if tick()-lastTrig<0.2 then return end
-        lastTrig=tick(); if callback then callback() end
+        lastTrig=tick(); safeCall(callback)
     end); table.insert(activeInputConnections,sideTrig)
     f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Keybind")
     f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",bindToString(curBind))
@@ -1246,10 +1342,13 @@ function GuiLibrary:CreateTextbox(tab, label, default, onChange, opts)
     local lastValid = box.Text
     local function tryApply(text, fromKeystroke)
         local accept = true
-        if opts.validate then accept = opts.validate(text) ~= false end
+        if opts.validate then
+            local ok, result=safeCall(opts.validate,text)
+            accept=ok and result~=false
+        end
         if accept and onChange then
-            local r = onChange(text)
-            if r==false then accept = false end
+            local ok, result=safeCall(onChange,text)
+            if not ok or result==false then accept = false end
         end
         if accept then
             lastValid = text
@@ -1349,7 +1448,7 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
                 refreshLabel()
                 local snap={}; for k,v in pairs(selected) do if v then snap[k]=true end end
                 dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(snap))
-                if callback then callback(snap) end
+                safeCall(callback,snap)
                 if not isInitializing then saveConfig(nil,false) end
             end)
             row.MouseEnter:Connect(function() createTween(row,{BackgroundTransparency=0.82}); createTween(rl,{TextColor3=COLORS.TEXT}) end)
@@ -1381,7 +1480,7 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
         selected={}; for k,b in pairs(v) do if b then selected[k]=true end end
         buildOptions(); refreshLabel()
         dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(selected))
-        if callback then local snap={}; for k,b in pairs(selected) do if b then snap[k]=true end end; callback(snap) end
+        if callback then local snap={}; for k,b in pairs(selected) do if b then snap[k]=true end end; safeCall(callback,snap) end
         return true
     end
     local function updateOptions(newOpts, keepSel)
@@ -1427,7 +1526,8 @@ function GuiLibrary:CreateSearch(tab, placeholder, getItems, onPick)
     local lpp=Instance.new("UIPadding"); lpp.PaddingTop=UDim.new(0,4); lpp.PaddingLeft=UDim.new(0,4); lpp.PaddingRight=UDim.new(0,4); lpp.PaddingBottom=UDim.new(0,4); lpp.Parent=list
     local function refresh()
         for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-        local items = (getItems and getItems(box.Text)) or {}
+        local _, items = safeCall(getItems,box.Text)
+        if type(items)~="table" then items={} end
         local q = box.Text:lower()
         local shown = {}
         for _,item in ipairs(items) do
@@ -1445,7 +1545,7 @@ function GuiLibrary:CreateSearch(tab, placeholder, getItems, onPick)
             rl.Font=Enum.Font.Gotham; rl.TextXAlignment=Enum.TextXAlignment.Left; rl.Parent=row
             row.MouseEnter:Connect(function() createTween(row,{BackgroundTransparency=0.2,BackgroundColor3=COLORS.ACCENT}) end)
             row.MouseLeave:Connect(function() createTween(row,{BackgroundTransparency=0.5,BackgroundColor3=COLORS.HOVER}) end)
-            row.MouseButton1Click:Connect(function() if onPick then onPick(item) end end)
+            row.MouseButton1Click:Connect(function() safeCall(onPick,item) end)
         end
         list.CanvasSize=UDim2.new(0,0,0,#shown*rowH+8)
     end
@@ -1457,7 +1557,7 @@ end
 function GuiLibrary:CreateProgressBar(tab, label, getValue, opts)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateProgressBar: invalid tab"); return nil end
     opts = opts or {}
-    local pollInterval = opts.interval or 0.1
+    local pollInterval = math.clamp(tonumber(opts.interval) or 0.1,0.03,60)
     local f=Instance.new("Frame"); f.Name=label.."ProgressBar"
     f.Size=UDim2.new(1,0,0,44); f.BackgroundColor3=COLORS.HOVER
     f.BorderSizePixel=0; f.Parent=tab.Content; createCorner(f,8); createStroke(f,1,COLORS.BORDER)
@@ -1500,7 +1600,9 @@ end
 function GuiLibrary:CreateGauge(tab, label, minVal, maxVal, getValue, opts)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateGauge: invalid tab"); return nil end
     opts = opts or {}
-    local pollInterval = opts.interval or 0.1
+    minVal=tonumber(minVal) or 0; maxVal=tonumber(maxVal) or (minVal+100)
+    if maxVal<=minVal then maxVal=minVal+1 end
+    local pollInterval = math.clamp(tonumber(opts.interval) or 0.1,0.03,60)
     local fmt = opts.format or "%.0f"
     local f=Instance.new("Frame"); f.Name=label.."Gauge"
     f.Size=UDim2.new(1,0,0,48); f.BackgroundColor3=COLORS.HOVER
@@ -1683,13 +1785,13 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
             if UserInputService:GetFocusedTextBox() then return end
             if curBind and curBind.type=="mouse" and gp then return end
             if tick()-lastTrig<0.2 then return end
-            if matchesBind(curBind, inp) then lastTrig=tick(); if entry.callback then entry.callback() end end
+            if matchesBind(curBind, inp) then lastTrig=tick(); safeCall(entry.callback) end
         end); table.insert(activeInputConnections, trigConn)
         local sideTrig = SideButtons.onBegan(function(name)
             if listening then return end
             if not (curBind and curBind.type=="side" and curBind.name==name) then return end
             if tick()-lastTrig<0.2 then return end
-            lastTrig=tick(); if entry.callback then entry.callback() end
+            lastTrig=tick(); safeCall(entry.callback)
         end); table.insert(activeInputConnections, sideTrig)
         bindings[entry.label or ("Bind "..i)] = {
             getBind = function() return curBind end,
@@ -1756,8 +1858,10 @@ function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
     info.BackgroundTransparency=1; info.TextColor3=COLORS.TEXT_MUTED
     info.TextSize=10; info.Font=Enum.Font.Code
     info.TextXAlignment=Enum.TextXAlignment.Left; info.Parent=f
-    local function hex(c) return string.format("#%02X%02X%02X",
-        math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5)) end
+    local function hex(c)
+        return string.format("#%02X%02X%02X",
+            math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5))
+    end
     local function emit()
         sw1.BackgroundColor3=stops[1].color; sw1.BackgroundTransparency=stops[1].transparency
         sw2.BackgroundColor3=stops[2].color; sw2.BackgroundTransparency=stops[2].transparency
@@ -1777,7 +1881,7 @@ function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
             {R=stops[1].color.R, G=stops[1].color.G, B=stops[1].color.B, T=stops[1].transparency},
             {R=stops[2].color.R, G=stops[2].color.G, B=stops[2].color.B, T=stops[2].transparency},
         }))
-        if onChange then onChange(seq, grad.Transparency) end
+        safeCall(onChange,seq,grad.Transparency)
         if not isInitializing then saveConfig(nil,false) end
     end
     local popup, popupCtl
@@ -1976,11 +2080,12 @@ function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
 end
 function GuiLibrary:CreateModal(title, body, buttons)
     buttons = buttons or {{text="OK", style="primary"}}
+    if type(buttons)~="table" then buttons={{text="OK", style="primary"}} end
     local sg = Instance.new("ScreenGui"); sg.Name="GuiLibraryModal"
     sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true
     sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
     sg.DisplayOrder = 1000
-    sg.Parent = game.CoreGui
+    if not parentToCoreGui(sg) then return nil end
     local backdrop=Instance.new("TextButton"); backdrop.Size=UDim2.new(1,0,1,0)
     backdrop.BackgroundColor3=Color3.new(0,0,0); backdrop.BackgroundTransparency=1
     backdrop.Text=""; backdrop.AutoButtonColor=false; backdrop.BorderSizePixel=0
@@ -1992,11 +2097,11 @@ function GuiLibrary:CreateModal(title, body, buttons)
     card.Parent=sg; createCorner(card,12); createStroke(card,1,COLORS.BORDER)
     createTween(card,{BackgroundTransparency=0, Position=UDim2.new(0.5,0,0.5,0)},0.25)
     local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-30,0,28); titleLbl.Position=UDim2.new(0,15,0,12)
-    titleLbl.BackgroundTransparency=1; titleLbl.Text=title or "Confirm"
+    titleLbl.BackgroundTransparency=1; titleLbl.Text=tostring(title or "Confirm")
     titleLbl.TextColor3=COLORS.TEXT; titleLbl.TextSize=15; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=card
     local bodyLbl=Instance.new("TextLabel"); bodyLbl.Size=UDim2.new(1,-30,0,80); bodyLbl.Position=UDim2.new(0,15,0,44)
-    bodyLbl.BackgroundTransparency=1; bodyLbl.Text=body or ""
+    bodyLbl.BackgroundTransparency=1; bodyLbl.Text=tostring(body or "")
     bodyLbl.TextColor3=COLORS.TEXT_MUTED; bodyLbl.TextSize=12; bodyLbl.Font=Enum.Font.Gotham
     bodyLbl.TextXAlignment=Enum.TextXAlignment.Left; bodyLbl.TextYAlignment=Enum.TextYAlignment.Top
     bodyLbl.TextWrapped=true; bodyLbl.Parent=card
@@ -2015,11 +2120,11 @@ function GuiLibrary:CreateModal(title, body, buttons)
         b.Position=UDim2.new(0,startX+(i-1)*(btnW+gap),1,-btnH-12)
         local style=bd.style or "primary"
         b.BackgroundColor3 = (style=="danger" and COLORS.DANGER) or (style=="ghost" and COLORS.HOVER) or COLORS.ACCENT
-        b.Text=bd.text or "Button"; b.TextColor3=Color3.new(1,1,1)
+        b.Text=tostring(bd.text or "Button"); b.TextColor3=Color3.new(1,1,1)
         b.TextSize=12; b.Font=Enum.Font.GothamBold; b.BorderSizePixel=0
         b.AutoButtonColor=false; b.Parent=card; createCorner(b,6)
         b.MouseButton1Click:Connect(function()
-            if bd.callback then pcall(bd.callback) end
+            safeCall(bd.callback)
             close()
         end)
         b.MouseEnter:Connect(function() createTween(b,{BackgroundTransparency=0.15}) end)
@@ -2045,13 +2150,15 @@ local function reflowNotifs()
 end
 function GuiLibrary:CreateNotification(title, message, duration, notifType)
     if GuiLibrary.NotificationsEnabled==false then return end
-    duration=duration or GuiLibrary.NotificationDuration or 3
+    duration=math.clamp(tonumber(duration) or tonumber(GuiLibrary.NotificationDuration) or 3,0.25,30)
     notifType=notifType or "info"
     local tColors={info=COLORS.ACCENT,success=COLORS.SUCCESS,warning=COLORS.WARNING,error=COLORS.DANGER}
     local tIcons ={info="i",success="✓",warning="!",error="x"}
     local nc=tColors[notifType] or COLORS.ACCENT
     local sg=Instance.new("ScreenGui"); sg.Name="NotificationGui"
-    sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true; sg.Parent=game.CoreGui
+    sg.ResetOnSpawn=false; sg.IgnoreGuiInset=true
+    sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; sg.DisplayOrder=900
+    if not parentToCoreGui(sg) then return nil end
     local nf=Instance.new("Frame"); nf.Size=UDim2.new(0,300,0,NOTIF_HEIGHT)
     nf.BackgroundColor3=COLORS.PRIMARY
     nf.BorderSizePixel=0; nf.Parent=sg; createCorner(nf,10); createStroke(nf,1,COLORS.BORDER)
@@ -2062,10 +2169,10 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
     local il=Instance.new("TextLabel"); il.Size=UDim2.new(1,0,1,0); il.BackgroundTransparency=1
     il.Text=tIcons[notifType] or "i"; il.TextColor3=nc; il.TextSize=13; il.Font=Enum.Font.GothamBold; il.Parent=ic
     local tl=Instance.new("TextLabel"); tl.Size=UDim2.new(1,-58,0,22); tl.Position=UDim2.new(0,52,0,12)
-    tl.BackgroundTransparency=1; tl.Text=title; tl.TextColor3=COLORS.TEXT; tl.TextSize=13
+    tl.BackgroundTransparency=1; tl.Text=tostring(title or ""); tl.TextColor3=COLORS.TEXT; tl.TextSize=13
     tl.Font=Enum.Font.GothamBold; tl.TextXAlignment=Enum.TextXAlignment.Left; tl.Parent=nf
     local ml=Instance.new("TextLabel"); ml.Size=UDim2.new(1,-58,0,30); ml.Position=UDim2.new(0,52,0,34)
-    ml.BackgroundTransparency=1; ml.Text=message; ml.TextColor3=COLORS.TEXT_MUTED; ml.TextSize=11
+    ml.BackgroundTransparency=1; ml.Text=tostring(message or ""); ml.TextColor3=COLORS.TEXT_MUTED; ml.TextSize=11
     ml.Font=Enum.Font.Gotham; ml.TextXAlignment=Enum.TextXAlignment.Left; ml.TextWrapped=true; ml.Parent=nf
     local pbg=Instance.new("Frame"); pbg.Size=UDim2.new(1,-16,0,2); pbg.Position=UDim2.new(0,8,1,-6)
     pbg.BackgroundColor3=COLORS.BORDER; pbg.BorderSizePixel=0; pbg.Parent=nf; createCorner(pbg,1)
@@ -2084,12 +2191,13 @@ function GuiLibrary:CreateNotification(title, message, duration, notifType)
         local outY = entry.TargetY or slotY
         createTween(nf,{Position=UDim2.new(1,20,0,outY),BackgroundTransparency=1},0.3)
         task.wait(0.35)
-        sg:Destroy()
+        if sg.Parent then sg:Destroy() end
         for i,e in ipairs(activeNotifs) do
             if e==entry then table.remove(activeNotifs,i); break end
         end
         reflowNotifs()
     end)
+    return entry
 end
 function GuiLibrary:CreateSettingsTab(window)
     local tabContent=Instance.new("ScrollingFrame"); tabContent.Name="SettingsContent"
@@ -2168,10 +2276,11 @@ function GuiLibrary:CreateSettingsTab(window)
         end)
     pcall(function() profileDropdown.SetValue(activeProfile) end)
     GuiLibrary:CreateButton(settingsTab,"New Profile (from input)",function()
-        local name = profileNameInput.GetValue()
-        if not name or name == "" then
+        local rawName = profileNameInput.GetValue()
+        if not rawName or tostring(rawName):match("^%s*$") then
             GuiLibrary:CreateNotification("Profile","Enter a name first.",2,"warning"); return
         end
+        local name = sanitizeProfileName(rawName)
         if isfile and pcall(function() return isfile(getProfilePath(name)) end) and isfile(getProfilePath(name)) then
             GuiLibrary:CreateNotification("Profile","Profile '"..name.."' already exists.",2,"warning"); return
         end
@@ -2186,10 +2295,11 @@ function GuiLibrary:CreateSettingsTab(window)
             "Created '" .. name .. "' from current state.", 2, "success")
     end)
     GuiLibrary:CreateButton(settingsTab,"Rename Active Profile",function()
-        local newName = profileNameInput.GetValue()
-        if not newName or newName == "" then
+        local rawName = profileNameInput.GetValue()
+        if not rawName or tostring(rawName):match("^%s*$") then
             GuiLibrary:CreateNotification("Profile","Enter a new name first.",2,"warning"); return
         end
+        local newName = sanitizeProfileName(rawName)
         if newName == activeProfile then
             GuiLibrary:CreateNotification("Profile","New name matches the current one.",2,"warning"); return
         end
@@ -2260,11 +2370,13 @@ function GuiLibrary:CreateSettingsTab(window)
     end)
 end
 function GuiLibrary:CreateWindow(title, size, iconAsset)
-    title=title or "GUI Library"; size=size or UDim2.new(0,600,0,400)
+    title=tostring(title or "GUI Library")
+    if typeof(size)~="UDim2" then size=UDim2.new(0,600,0,400) end
     iconAsset = iconAsset or GuiLibrary.Icon
     local sg=Instance.new("ScreenGui"); sg.Name="GuiLibraryUI"
     sg.ResetOnSpawn=false; sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
-    sg.IgnoreGuiInset=true; sg.Parent=game.CoreGui
+    sg.IgnoreGuiInset=true; sg.DisplayOrder=100
+    if not parentToCoreGui(sg) then return nil end
     local loader=createLoader(sg,90)
     local mf=Instance.new("Frame"); mf.Name="MainFrame"
     mf.AnchorPoint=Vector2.new(0,0)
@@ -2387,6 +2499,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         ScreenGui=sg, MainFrame=mf, ContentFrame=contentFrame,
         TabsContainer=tabsCont, TabContentContainer=tabContent,
         Tabs={}, CurrentTab=nil, CurrentSize=size, FPSLabel=fpsLbl,
+        LockPosition=false, SavedPosition=nil,
     }
     GuiLibrary.CurrentWindow=window
     local isVisible=true
@@ -2597,13 +2710,22 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     end)
     settingsBtn.MouseEnter:Connect(function() createTween(settingsBtn,{BackgroundTransparency=0,TextColor3=COLORS.TEXT}) end)
     settingsBtn.MouseLeave:Connect(function() createTween(settingsBtn,{BackgroundTransparency=0.35,TextColor3=COLORS.TEXT_MUTED}) end)
-    closeBtn.MouseButton1Click:Connect(function()
-        for _,c in ipairs(activeInputConnections) do
-            if c and typeof(c)=="RBXScriptConnection" and c.Connected then pcall(function() c:Disconnect() end)
-            elseif type(c)=="table" and type(c.Disconnect)=="function" then pcall(function() c:Disconnect() end) end
-        end
-        activeInputConnections={}; sg:Destroy()
-    end)
+    local destroyed=false
+    local function destroyWindow()
+        if destroyed then return end
+        destroyed=true
+        disconnectConnections(activeInputConnections)
+        if GuiLibrary.CurrentWindow==window then GuiLibrary.CurrentWindow=nil end
+        if sg.Parent then sg:Destroy() end
+    end
+    window.Destroy=destroyWindow
+    table.insert(activeInputConnections,sg.Destroying:Connect(function()
+        if destroyed then return end
+        destroyed=true
+        disconnectConnections(activeInputConnections)
+        if GuiLibrary.CurrentWindow==window then GuiLibrary.CurrentWindow=nil end
+    end))
+    closeBtn.MouseButton1Click:Connect(destroyWindow)
     closeBtn.MouseEnter:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.1}) end)
     closeBtn.MouseLeave:Connect(function() createTween(closeBtn,{BackgroundTransparency=0.55}) end)
     -- Minimize collapses the window down to just the title bar so it stays
@@ -2639,7 +2761,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     GuiLibrary:CreateSettingsTab(window)
     GuiLibrary.LoadConfig(window)
     isInitializing=false
-    task.wait(1.5); loader:Destroy()
+    task.wait(1.5); if loader.Parent then loader:Destroy() end
     mf.Visible=true
     local sz = window.CurrentSize or size
     local vp = workspace.CurrentCamera.ViewportSize
@@ -2668,6 +2790,11 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     return window
 end
 function GuiLibrary:CreateTab(window, name)
+    if type(window)~="table" or not window.TabsContainer or not window.TabContentContainer then
+        warn("[GuiLibrary] CreateTab: invalid window")
+        return nil
+    end
+    name=tostring(name or "Tab")
     local tabBtn=Instance.new("TextButton"); tabBtn.Name=name.."Tab"
     tabBtn.AutomaticSize=Enum.AutomaticSize.X
     tabBtn.Size=UDim2.new(0,0,0,28)
@@ -2729,5 +2856,18 @@ function GuiLibrary:CreateTab(window, name)
     end
     updateElementColors(window)
     return tab
+end
+
+-- Idempotent teardown for reloads and callers that remove the whole library.
+-- Existing window.Destroy() remains available for single-window cleanup.
+function GuiLibrary:Destroy()
+    disconnectConnections(activeInputConnections)
+    disconnectConnections(libraryConnections)
+    for gui in pairs(rootGuis) do
+        if gui and gui.Parent then pcall(function() gui:Destroy() end) end
+        rootGuis[gui]=nil
+    end
+    table.clear(activeNotifs)
+    GuiLibrary.CurrentWindow=nil
 end
 return GuiLibrary
