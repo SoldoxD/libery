@@ -76,9 +76,6 @@ local function safeCall(callback, ...)
     if not ok then warn("[GuiLibrary] Callback failed: "..tostring(result)) end
     return ok, result
 end
-
--- CoreGui is the primary parent as requested. gethui is only a compatibility
--- fallback when an executor denies direct CoreGui parenting.
 local function parentToCoreGui(screenGui)
     local ok, err = pcall(function() screenGui.Parent=CoreGui end)
     if not ok and type(gethui)=="function" then
@@ -97,14 +94,6 @@ local function parentToCoreGui(screenGui)
     screenGui.Destroying:Connect(function() rootGuis[screenGui]=nil end)
     return true
 end
-
--- ── Extended mouse button (MB4 / MB5) support ────────────────────────────────
--- Roblox's UserInputService only reports MouseButton1-3, so the two side
--- buttons never arrive through InputBegan. We read them straight from the OS
--- with GetAsyncKeyState (VK_XBUTTON1 = 0x05, VK_XBUTTON2 = 0x06), polled every
--- frame while the Roblox window is focused. This works on any executor that
--- exposes a GetAsyncKeyState-style function (Synapse X and most others); if
--- none is found the module stays disabled and everything else keeps working.
 local SideButtons = { NAMES = { MB4 = 0x05, MB5 = 0x06 } }
 do
     local env = (type(getgenv)=="function" and getgenv()) or _G or {}
@@ -163,9 +152,6 @@ do
         table.insert(libraryConnections, pollConn)
     end
 
-    -- Escape hatch: if your executor exposes the key-state reader under a name we
-    -- didn't auto-detect, wire it in with GuiLibrary.SideButtons.setProvider(fn).
-    -- fn(virtualKeyCode) should return the WinAPI GetAsyncKeyState value.
     function SideButtons.setProvider(fn)
         if type(fn)~="function" then return false end
         keyState = fn
