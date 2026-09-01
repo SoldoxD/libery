@@ -1,6 +1,9 @@
 -- Made by Soldo / Discord: cyber_modz
 
 local GuiLibrary = { CurrentWindow = nil }
+
+-- Capture trusted service references once. Real exposes cloneref, but the
+-- fallback keeps the library compatible with executors that do not.
 local function getService(name)
     local service = game:GetService(name)
     if type(cloneref)=="function" then
@@ -39,6 +42,7 @@ local themes = {
 }
 GuiLibrary.debugPrints = false
 GuiLibrary.Icon = nil
+GuiLibrary.ESPPreviewEnabled = false
 local function dprint(...) if GuiLibrary.debugPrints then print("[GuiLibrary]", ...) end end
 local AUTO_SAVE_FOLDER   = "GuiLibrary_AutoSaves"
 local MAX_CONFIG_BYTES   = 1024*1024
@@ -50,9 +54,28 @@ local dropdownLists      = {}
 local dropdownClosers    = {}
 local restorationQueue   = {}
 local isInitializing     = false
+local isLoadingConfig    = false
+local setupGraceUntil    = 0
+local queuedSaveWindow   = nil
+local queuedSaveToken    = 0
 local activeInputConnections = {}
 local libraryConnections = {}
 local rootGuis = {}
+local elementIdCounts = setmetatable({}, {__mode="k"})
+
+-- The first widget keeps the legacy ID, so old profiles still load. Repeated
+-- labels get a deterministic suffix instead of overwriting each other.
+local function makeElementId(tab, label, widgetType)
+    setupGraceUntil=math.max(setupGraceUntil,os.clock()+0.5)
+    local tabName=tostring((tab and tab.Name) or "Tab"):gsub("%s+","_")
+    local labelName=tostring(label or widgetType or "Element"):gsub("%s+","_")
+    local base=tabName.."_"..labelName.."_"..tostring(widgetType or "Element")
+    local counts=elementIdCounts[tab]
+    if not counts then counts={}; elementIdCounts[tab]=counts end
+    counts[base]=(counts[base] or 0)+1
+    if counts[base]==1 then return base end
+    return base.."__"..tostring(counts[base])
+end
 
 local function disconnectConnection(connection)
     if not connection then return end
@@ -387,13 +410,87 @@ local function updateElementColors(window, instant)
         end
     end
 end
+
+local function decodeConfig(raw)
+    if type(raw)~="string" or #raw==0 or #raw>MAX_CONFIG_BYTES then return nil end
+    local ok, decoded=pcall(function() return HttpService:JSONDecode(raw) end)
+    if ok and type(decoded)=="table" then return decoded end
+    return nil
+end
+
+local function readValidFile(path)
+    local exists=false
+    pcall(function() exists=isfile(path) end)
+    if not exists then return nil, nil end
+    local ok, raw=pcall(function() return readfile(path) end)
+    if not ok then return nil, nil end
+    return decodeConfig(raw), raw
+end
+
+-- Real has no rename primitive, so use a verified staging file and keep a
+-- last-known-good backup. A failed/truncated write is restored automatically.
+local function writeConfigVerified(path, json)
+    local tempPath=path..".tmp"
+    local backupPath=path..".bak"
+    local _, oldRaw=readValidFile(path)
+    if oldRaw then pcall(function() writefile(backupPath,oldRaw) end) end
+
+    local stagedOk, stagedErr=pcall(function() writefile(tempPath,json) end)
+    if not stagedOk then return false, stagedErr end
+    local stagedConfig, stagedRaw=readValidFile(tempPath)
+    if not stagedConfig or stagedRaw~=json then
+        pcall(function() delfile(tempPath) end)
+        return false, "staging verification failed"
+    end
+
+    local writeOk, writeErr=pcall(function() writefile(path,stagedRaw) end)
+    if not writeOk then
+        pcall(function() delfile(tempPath) end)
+        return false, writeErr
+    end
+    local finalConfig, finalRaw=readValidFile(path)
+    if not finalConfig or finalRaw~=json then
+        if oldRaw then pcall(function() writefile(path,oldRaw) end) end
+        pcall(function() delfile(tempPath) end)
+        return false, "final verification failed"
+    end
+
+    pcall(function() writefile(backupPath,json) end)
+    pcall(function() delfile(tempPath) end)
+    return true
+end
+
 local function saveConfig(window, force)
-    if isInitializing then return end
+    if isInitializing or isLoadingConfig then return false end
     window = window or GuiLibrary.CurrentWindow
-    if not window or not window.CurrentSize then return end
+    if not window or not window.CurrentSize then return false end
+
+    -- Constructors can restore values and request saves before the caller has
+    -- finished creating all widgets. Queue those requests so a partial widget
+    -- list never replaces a complete profile. Explicit/manual saves bypass it.
+    if force==false and os.clock()<setupGraceUntil then
+        queuedSaveWindow=window
+        queuedSaveToken=queuedSaveToken+1
+        local token=queuedSaveToken
+        task.delay(math.max(setupGraceUntil-os.clock(),0),function()
+            if token~=queuedSaveToken then return end
+            local pending=queuedSaveWindow
+            queuedSaveWindow=nil
+            if pending and os.clock()<setupGraceUntil then
+                saveConfig(pending,false)
+                return
+            end
+            setupGraceUntil=0
+            if pending then saveConfig(pending,true) end
+        end)
+        return true
+    end
     ensureProfileFolders()
     local mfPos = window.MainFrame and window.MainFrame.Position or UDim2.new(0,0,0,0)
     local config = {
+        FormatVersion      = 2,
+        SavedAt            = os.time(),
+        Profile            = activeProfile,
         UIScale            = window.CurrentSize.X.Offset/600,
         SizeWidth          = window.CurrentSize.X.Offset,
         SizeHeight         = window.CurrentSize.Y.Offset,
@@ -417,7 +514,7 @@ local function saveConfig(window, force)
             local id = el:GetAttribute("ElementID")
             if not id then
                 local n = el.Name or ""
-                id = (tab.Name or "Tab").."_"..n:gsub("%s+","_")
+                id = makeElementId(tab,n,"Element")
                 el:SetAttribute("ElementID",id)
             end
             local wt = el:GetAttribute("WidgetType")
@@ -440,7 +537,7 @@ local function saveConfig(window, force)
         warn("[GuiLibrary] Config encode failed: "..tostring(jsonStr))
         return false
     end
-    local wOk,wErr=pcall(function() writefile(getAutoSavePath(), jsonStr) end)
+    local wOk,wErr=writeConfigVerified(getAutoSavePath(),jsonStr)
     if wOk then
         dprint(string.format("Config saved → %s | profile=%s, components=%d, size=%dx%d, pos=(%d,%d)",
             getAutoSavePath(), activeProfile, #config.Components,
@@ -455,17 +552,21 @@ GuiLibrary.SaveConfig = saveConfig
 local function loadConfig(window)
     if not window then dprint("loadConfig: no window"); return false end
     resolveActiveProfile()
-    local fileExists=false; pcall(function() fileExists=isfile(getAutoSavePath()) end)
-    dprint("loadConfig: profile="..activeProfile.." path="..getAutoSavePath().." exists="..tostring(fileExists))
-    if not fileExists then dprint("No profile file → using defaults"); return false end
-    local rawData; pcall(function() rawData = readfile(getAutoSavePath()) end)
-    if type(rawData)~="string" or #rawData>MAX_CONFIG_BYTES then
-        warn("[GuiLibrary] Config is missing, invalid, or larger than 1 MiB")
-        return false
+    local path=getAutoSavePath()
+    local config,rawData=readValidFile(path)
+    local recovered=false
+    if not config then
+        config,rawData=readValidFile(path..".bak")
+        recovered=config~=nil
     end
-    dprint("loadConfig: raw bytes = "..(rawData and #rawData or 0))
-    local rOk,config=pcall(function() return HttpService:JSONDecode(rawData) end)
-    if not rOk or type(config)~="table" then warn("[GuiLibrary] JSON parse failed: "..tostring(config)); return false end
+    dprint("loadConfig: profile="..activeProfile.." path="..path.." valid="..tostring(config~=nil))
+    if not config then dprint("No valid profile or backup → using defaults"); return false end
+    if recovered then
+        warn("[GuiLibrary] Main profile was invalid; recovered from backup")
+        pcall(function() writefile(path,rawData) end)
+    end
+    dprint("loadConfig: raw bytes = "..#rawData)
+    isLoadingConfig=true
     dprint(string.format("loadConfig: parsed | components=%d",
         config.Components and #config.Components or 0))
     if config.AnimationsEnabled~=nil then ANIM_TIME=config.AnimationsEnabled and 0.25 or 0.01 end
@@ -511,6 +612,7 @@ local function loadConfig(window)
     end
     dprint("loadConfig: restored "..restoredCount.." existing widgets, "..countTable(restorationQueue).." pending for late-created widgets")
     updateElementColors(window,true)
+    isLoadingConfig=false
     task.delay(2, function()
         GuiLibrary:CreateNotification("Profile",
             "Loaded profile '" .. activeProfile .. "'.", 3, "success")
@@ -609,7 +711,7 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
     ind.Position=default and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)
     ind.BackgroundColor3=Color3.new(1,1,1); ind.BorderSizePixel=0; ind.Parent=sw; createCorner(ind,9)
     local isToggled=default or false
-    local eid=(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Toggle"
+    local eid=makeElementId(tab,text,"Toggle")
     f:SetAttribute("ElementID",eid); f:SetAttribute("WidgetType","Toggle"); f:SetAttribute("ToggleState",isToggled and 1 or 0)
     local function setState(state, instant)
         isToggled = state and true or false
@@ -640,7 +742,10 @@ function GuiLibrary:CreateToggle(tab, text, default, callback)
         dprint("CreateToggle["..eid.."]: no saved value, using default "..tostring(default))
     end
     table.insert(tab.Elements,f)
-    return {Frame=f, GetValue=function() return isToggled end, SetValue=setState}
+    return {Frame=f, GetValue=function() return isToggled end, SetValue=function(v,instant)
+        setState(v,instant)
+        if not isInitializing then saveConfig(nil,false) end
+    end}
 end
 function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateSlider: invalid tab"); return nil end
@@ -670,10 +775,10 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     handle.BackgroundColor3=Color3.new(1,1,1); handle.Text=""
     handle.BorderSizePixel=0; handle.AutoButtonColor=false; handle.ZIndex=2; handle.Parent=track
     createCorner(handle,9); createStroke(handle,1.5,COLORS.ACCENT)
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Slider")
+    f:SetAttribute("ElementID",makeElementId(tab,text,"Slider"))
     f:SetAttribute("WidgetType","Slider"); f:SetAttribute("SliderMin",min); f:SetAttribute("SliderMax",max)
     local eid=f:GetAttribute("ElementID"); local cur=default or min
-    local dragging=false; local curPct=0; local dragInput=nil
+    local dragging=false; local curPct=0; local dragInput=nil; local sliderSaveToken=0
     local function updateSlider(v, shouldSave)
         if shouldSave==nil then shouldSave=false end
         cur=math.clamp(tonumber(v) or cur or min,min,max); curPct=(cur-min)/(max-min)
@@ -681,6 +786,13 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
         val.Text=string.format("%.1f",cur); f:SetAttribute("SliderValue",cur)
         safeCall(callback,cur)
         if shouldSave and not isInitializing then saveConfig(nil,false) end
+        if dragging and not shouldSave and not isInitializing then
+            sliderSaveToken=sliderSaveToken+1
+            local token=sliderSaveToken
+            task.delay(0.25,function()
+                if token==sliderSaveToken and f.Parent then saveConfig(nil,false) end
+            end)
+        end
     end
     handle.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
@@ -696,6 +808,7 @@ function GuiLibrary:CreateSlider(tab, text, min, max, default, callback)
     local endConn=UserInputService.InputEnded:Connect(function(inp)
         if dragging and (inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch) then
             dragging=false; dragInput=nil
+            sliderSaveToken=sliderSaveToken+1
             createTween(handle,{Size=UDim2.new(0,18,0,18),Position=UDim2.new(curPct,-9,0.5,-9)})
             if not isInitializing then saveConfig(nil,false) end
         end
@@ -829,8 +942,9 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
             curSel=curOpts[1] or "None"; dropLbl.Text=text..":  "..curSel
             dropFrame:SetAttribute("DropdownValue",tostring(curSel)); safeCall(callback,curSel)
         end
+        if not isInitializing then saveConfig(nil,false) end
     end
-    dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Dropdown")
+    dropFrame:SetAttribute("ElementID",makeElementId(tab,text,"Dropdown"))
     dropFrame:SetAttribute("WidgetType","Dropdown"); dropFrame:SetAttribute("DropdownValue",curSel)
     elementSetters[dropFrame]=function(v) setVal(v); if not isInitializing then saveConfig(nil,false) end end
     elementCallbacks[dropFrame]=callback
@@ -845,7 +959,10 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
         setVal(restorationQueue[eid].Value); restorationQueue[eid]=nil
     end
     table.insert(tab.Elements,dropFrame)
-    return {Frame=dropFrame, GetValue=function() return curSel end, SetValue=setVal, UpdateOptions=updateOptions}
+    return {Frame=dropFrame, GetValue=function() return curSel end, SetValue=function(v)
+        setVal(v)
+        if not isInitializing then saveConfig(nil,false) end
+    end, UpdateOptions=updateOptions}
 end
 function GuiLibrary:CreateLabel(tab, text)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateLabel: invalid tab"); return nil end
@@ -925,7 +1042,7 @@ function GuiLibrary:CreateInput(tab, placeholder, callback)
     end)
     box.Focused:Connect(function() createStroke(box,1.5,COLORS.ACCENT) end)
     box.FocusLost:Connect(function() local s=box:FindFirstChildWhichIsA("UIStroke"); if s then s:Destroy() end end)
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..placeholder:gsub("%s+","_").."_Input")
+    f:SetAttribute("ElementID",makeElementId(tab,placeholder,"Input"))
     f:SetAttribute("WidgetType","Input"); f:SetAttribute("InputValue","")
     local function setInput(v)
         if type(v)=="string" then box.Text=v; f:SetAttribute("InputValue",v)
@@ -1105,7 +1222,7 @@ function GuiLibrary:CreateColorPicker(tab, text, defaultColor, callback)
     closePop.MouseButton1Click:Connect(function() setPopOpen(false) end)
     closePop.MouseEnter:Connect(function() createTween(closePop,{BackgroundTransparency=0}) end)
     closePop.MouseLeave:Connect(function() createTween(closePop,{BackgroundTransparency=0.4}) end)
-    cf:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_ColorPicker")
+    cf:SetAttribute("ElementID",makeElementId(tab,text,"ColorPicker"))
     cf:SetAttribute("WidgetType","ColorPicker"); cf:SetAttribute("ColorValue",curColor)
     cf:SetAttribute("TransparencyValue",transparency)
     elementSetters[cf]=setColor
@@ -1297,7 +1414,7 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
         if tick()-lastTrig<0.2 then return end
         lastTrig=tick(); safeCall(callback)
     end); table.insert(activeInputConnections,sideTrig)
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_Keybind")
+    f:SetAttribute("ElementID",makeElementId(tab,text,"Keybind"))
     f:SetAttribute("WidgetType","Keybind"); f:SetAttribute("KeybindValue",bindToString(curBind))
     elementSetters[f]=function(v) if setKeybind(v) and not isInitializing then saveConfig(nil,false) end end
     local eid=f:GetAttribute("ElementID")
@@ -1316,7 +1433,11 @@ function GuiLibrary:CreateKeybind(tab, text, defaultKey, callback)
             if curBind.type=="mouse" then return UserInputService:IsMouseButtonPressed(curBind.value) end
             return false
         end,
-        SetKey=setKeybind,
+        SetKey=function(v)
+            local ok=setKeybind(v)
+            if ok and not isInitializing then saveConfig(nil,false) end
+            return ok
+        end,
     }
 end
 function GuiLibrary:CreateTextbox(tab, label, default, onChange, opts)
@@ -1362,7 +1483,7 @@ function GuiLibrary:CreateTextbox(tab, label, default, onChange, opts)
         box:GetPropertyChangedSignal("Text"):Connect(function() tryApply(box.Text, true) end)
     end
     box.FocusLost:Connect(function() tryApply(box.Text, false) end)
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..label:gsub("%s+","_").."_Textbox")
+    f:SetAttribute("ElementID",makeElementId(tab,label,"Textbox"))
     f:SetAttribute("WidgetType","Textbox"); f:SetAttribute("TextboxValue", box.Text)
     elementSetters[f]=function(v) if type(v)=="string" then box.Text=v; tryApply(v, false) end end
     local eid=f:GetAttribute("ElementID")
@@ -1488,8 +1609,10 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
         curOpts={table.unpack(newOpts)}
         if not keepSel then selected={} end
         buildOptions(); refreshLabel()
+        dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(selected))
+        if not isInitializing then saveConfig(nil,false) end
     end
-    dropFrame:SetAttribute("ElementID",(tab.Name or "Tab").."_"..text:gsub("%s+","_").."_MultiSelect")
+    dropFrame:SetAttribute("ElementID",makeElementId(tab,text,"MultiSelect"))
     dropFrame:SetAttribute("WidgetType","MultiSelect")
     dropFrame:SetAttribute("MultiSelectValue", HttpService:JSONEncode(selected))
     elementSetters[dropFrame]=function(v) if setSel(v) and not isInitializing then saveConfig(nil,false) end end
@@ -1501,7 +1624,11 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
     return {
         Frame=dropFrame, Instance=dropFrame,
         GetValue=function() local snap={}; for k,b in pairs(selected) do if b then snap[k]=true end end; return snap end,
-        SetValue=setSel,
+        SetValue=function(v)
+            local ok=setSel(v)
+            if ok and not isInitializing then saveConfig(nil,false) end
+            return ok
+        end,
         UpdateOptions=updateOptions,
     }
 end
@@ -1803,7 +1930,7 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
     local function snapshot()
         local snap = {}; for k,b in pairs(bindings) do snap[k] = bindToString(b.getBind()) end; return snap
     end
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..((title or "Group"):gsub("%s+","_")).."_BindGroup")
+    f:SetAttribute("ElementID",makeElementId(tab,title or "Group","BindGroup"))
     f:SetAttribute("WidgetType","BindGroup")
     f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot()))
     elementSetters[f]=function(v)
@@ -1821,7 +1948,13 @@ function GuiLibrary:CreateBindGroup(tab, title, list)
     return {
         Frame=f, Instance=f,
         GetBinds=snapshot,
-        SetBind=function(label,s) if bindings[label] then bindings[label].setBind(s); f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot())) end end,
+        SetBind=function(label,s)
+            if not bindings[label] then return false end
+            bindings[label].setBind(s)
+            f:SetAttribute("BindGroupValue", HttpService:JSONEncode(snapshot()))
+            if not isInitializing then saveConfig(nil,false) end
+            return true
+        end,
     }
 end
 function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
@@ -2027,7 +2160,7 @@ function GuiLibrary:CreateColorGradient(tab, label, defaultStops, onChange)
     end
     sw1.MouseButton1Click:Connect(function() showPopup(1) end)
     sw2.MouseButton1Click:Connect(function() showPopup(2) end)
-    f:SetAttribute("ElementID",(tab.Name or "Tab").."_"..label:gsub("%s+","_").."_ColorGradient")
+    f:SetAttribute("ElementID",makeElementId(tab,label,"ColorGradient"))
     f:SetAttribute("WidgetType","ColorGradient")
     emit()
     local function setStops(a, b)
@@ -2369,7 +2502,387 @@ function GuiLibrary:CreateSettingsTab(window)
             })
     end)
 end
-function GuiLibrary:CreateWindow(title, size, iconAsset)
+-- Preview-only mannequin. No player, avatar service, remote, or game module is
+-- needed; custom providers can replace it with a cloned model later.
+local function createPreviewDummy()
+    local model=Instance.new("Model"); model.Name="PreviewDummy"
+    local function part(name,size,position,color)
+        local p=Instance.new("Part"); p.Name=name; p.Size=size
+        p.CFrame=CFrame.new(position); p.Color=color; p.Material=Enum.Material.SmoothPlastic
+        p.Anchored=true; p.CanCollide=false; p.TopSurface=Enum.SurfaceType.Smooth
+        p.BottomSurface=Enum.SurfaceType.Smooth; p.Parent=model
+        return p
+    end
+    local dark=Color3.fromRGB(65,72,85); local grey=Color3.fromRGB(120,130,145)
+    part("Torso",Vector3.new(2,2,1),Vector3.new(0,3,0),dark)
+    part("Head",Vector3.new(1.25,1.25,1.15),Vector3.new(0,4.65,0),grey)
+    part("Left Arm",Vector3.new(0.8,2,0.9),Vector3.new(-1.45,3,0),grey)
+    part("Right Arm",Vector3.new(0.8,2,0.9),Vector3.new(1.45,3,0),grey)
+    part("Left Leg",Vector3.new(0.9,2,0.95),Vector3.new(-0.55,1,0),dark)
+    part("Right Leg",Vector3.new(0.9,2,0.95),Vector3.new(0.55,1,0),dark)
+    part("Visor",Vector3.new(1.05,0.28,0.1),Vector3.new(0,4.8,-0.61),Color3.fromRGB(85,130,195))
+    return model
+end
+
+function GuiLibrary:CreateESPPreview(window, options)
+    assert(type(window)=="table" and window.MainFrame and window.ScreenGui,
+        "CreateESPPreview requires a library window")
+    options=type(options)=="table" and options or {}
+    if window.ESPPreview and not window.ESPPreview.IsDestroyed() then
+        local preview=window.ESPPreview
+        preview.SetOptions(options)
+        if options.Model then
+            local ok,err=preview.SetModel(options.Model)
+            if not ok then warn("[GuiLibrary] Preview model failed: "..tostring(err)) end
+        end
+        if options.SkeletonMap then preview.SetSkeleton(options.SkeletonMap) end
+        if options.Provider then
+            local ok,err=preview.SetProvider(options.Provider)
+            if not ok then warn("[GuiLibrary] Preview provider failed: "..tostring(err)) end
+        end
+        preview.SetEnabled(true)
+        return preview
+    end
+    local main=window.MainFrame
+    local screen=window.ScreenGui
+    local connections={}
+    local destroyed=false
+    local requestId=0
+    local model=nil
+    local provider=nil
+    local skeleton=nil
+    local lines={}
+    local api={}
+    local settings={
+        Enabled=true, Width=280, Gap=16, Side="Auto", Rotation=0,
+        Box=true, BoxColor=Color3.fromRGB(160,160,175),
+        Skeleton=true, SkeletonColor=Color3.fromRGB(230,230,245), SkeletonThickness=2,
+        HealthBar=true, Health=100, MaxHealth=100, HealthColor=Color3.fromRGB(0,255,60),
+        Distance="5m", Name="Preview character", Weapon="Weapon", WeaponIcon="",
+        Tint=true, TintColor=COLORS.ACCENT, TintTransparency=0.55,
+    }
+    local function finite(value,fallback,lo,hi)
+        local n=tonumber(value)
+        if not n or n~=n or math.abs(n)==math.huge then return fallback end
+        return math.clamp(n,lo,hi)
+    end
+    local function make(class,parent,props)
+        local object=Instance.new(class)
+        for key,value in pairs(props) do object[key]=value end
+        object.Parent=parent
+        return object
+    end
+    local panel=make("Frame",screen,{
+        Name="ESPPreview",Size=UDim2.fromOffset(280,430),BackgroundColor3=COLORS.SECONDARY,
+        BorderSizePixel=0,ClipsDescendants=true,Visible=false,
+    })
+    createCorner(panel,10); local border=createStroke(panel,1,COLORS.BORDER)
+    local header=make("TextLabel",panel,{
+        Name="Header",Size=UDim2.new(1,0,0,40),BackgroundColor3=COLORS.PRIMARY,
+        BorderSizePixel=0,Text="ESP Preview",Font=Enum.Font.GothamBold,TextSize=15,TextColor3=COLORS.TEXT,
+    })
+    local healthBack=make("Frame",panel,{
+        Name="HealthBar",Position=UDim2.fromOffset(18,55),Size=UDim2.new(1,-55,0,9),
+        BackgroundColor3=COLORS.BORDER,BorderSizePixel=0,
+    })
+    createCorner(healthBack,3)
+    local healthFill=make("Frame",healthBack,{
+        Name="Fill",Size=UDim2.fromScale(1,1),BackgroundColor3=settings.HealthColor,BorderSizePixel=0,
+    })
+    createCorner(healthFill,3)
+    local distance=make("TextLabel",panel,{
+        Name="Distance",Position=UDim2.new(1,-35,0,49),Size=UDim2.fromOffset(32,20),
+        BackgroundTransparency=1,Text=settings.Distance,TextColor3=COLORS.TEXT,
+        TextSize=11,Font=Enum.Font.Gotham,TextTruncate=Enum.TextTruncate.AtEnd,
+    })
+    local viewport=make("ViewportFrame",panel,{
+        Name="CharacterViewport",Position=UDim2.fromOffset(16,76),Size=UDim2.new(1,-32,1,-130),
+        BackgroundColor3=Color3.fromRGB(18,17,25),BorderSizePixel=0,
+        Ambient=Color3.fromRGB(180,180,195),LightColor=Color3.new(1,1,1),LightDirection=Vector3.new(-1,-1,-1),
+    })
+    local world=Instance.new("WorldModel"); world.Name="PreviewWorld"; world.Parent=viewport
+    local camera=Instance.new("Camera"); camera.FieldOfView=35
+    camera.Parent=viewport; viewport.CurrentCamera=camera
+    local overlay=make("Frame",panel,{
+        Name="Overlay",Position=viewport.Position,Size=viewport.Size,
+        BackgroundTransparency=1,BorderSizePixel=0,ClipsDescendants=true,ZIndex=2,
+    })
+    local tint=make("Frame",overlay,{
+        Name="Tint",Size=UDim2.fromScale(1,1),BackgroundColor3=settings.TintColor,
+        BackgroundTransparency=settings.TintTransparency,BorderSizePixel=0,ZIndex=2,
+    })
+    local fade=Instance.new("UIGradient"); fade.Rotation=90
+    fade.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)})
+    fade.Parent=tint
+    local box=make("Frame",overlay,{
+        Name="Box",BackgroundTransparency=1,BorderSizePixel=0,ZIndex=3,Visible=false,
+    })
+    local boxStroke=createStroke(box,1.5,settings.BoxColor)
+    local nameLabel=make("TextLabel",panel,{
+        Name="CharacterName",Position=UDim2.new(0,8,1,-48),Size=UDim2.new(1,-16,0,18),
+        BackgroundTransparency=1,Text=settings.Name,TextColor3=COLORS.TEXT_MUTED,
+        Font=Enum.Font.Gotham,TextSize=10,TextTruncate=Enum.TextTruncate.AtEnd,
+    })
+    local weapon=make("TextLabel",panel,{
+        Name="Weapon",Position=UDim2.new(0,8,1,-28),Size=UDim2.new(1,-16,0,20),
+        BackgroundTransparency=1,Text=settings.Weapon,TextColor3=COLORS.TEXT,
+        Font=Enum.Font.GothamBold,TextSize=12,TextTruncate=Enum.TextTruncate.AtEnd,
+    })
+    local weaponIcon=make("ImageLabel",panel,{
+        Name="WeaponIcon",Position=UDim2.new(0.5,-40,1,-28),Size=UDim2.fromOffset(80,20),
+        BackgroundTransparency=1,Image="",ScaleType=Enum.ScaleType.Fit,Visible=false,
+    })
+    local function connect(signal,callback)
+        local connection=signal:Connect(callback)
+        table.insert(connections,connection)
+    end
+    local function clearLines()
+        for _,entry in ipairs(lines) do entry.Frame:Destroy() end
+        table.clear(lines)
+    end
+    local function rebuildSkeleton()
+        clearLines()
+        if not model then return end
+        local pairsList={}
+        if skeleton then
+            for _,edge in ipairs(skeleton) do
+                local a=model:FindFirstChild(edge[1],true)
+                local b=model:FindFirstChild(edge[2],true)
+                if a and b then table.insert(pairsList,{a,b}) end
+            end
+        else
+            for _,joint in ipairs(model:GetDescendants()) do
+                if joint:IsA("Motor6D") and joint.Part0 and joint.Part1
+                    and joint.Part0:IsDescendantOf(model) and joint.Part1:IsDescendantOf(model) then
+                    table.insert(pairsList,{joint.Part0,joint.Part1})
+                end
+            end
+            if #pairsList==0 then
+                for _,names in ipairs({{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},
+                    {"Torso","Left Leg"},{"Torso","Right Leg"}}) do
+                    local a=model:FindFirstChild(names[1],true); local b=model:FindFirstChild(names[2],true)
+                    if a and b then table.insert(pairsList,{a,b}) end
+                end
+            end
+        end
+        for i,edge in ipairs(pairsList) do
+            if i>128 then break end
+            local line=make("Frame",overlay,{
+                Name="SkeletonLine",AnchorPoint=Vector2.new(0.5,0.5),BorderSizePixel=0,
+                BackgroundColor3=settings.SkeletonColor,ZIndex=4,Visible=false,
+            })
+            table.insert(lines,{Frame=line,A=edge[1],B=edge[2]})
+        end
+    end
+    local function point(instance)
+        if instance:IsA("BasePart") then return instance.Position end
+        if instance:IsA("Bone") then return instance.TransformedWorldCFrame.Position end
+        if instance:IsA("Attachment") then return instance.WorldPosition end
+        return nil
+    end
+    -- Project using the ViewportFrame dimensions, not the game's camera viewport.
+    local function project(position)
+        local p=camera.CFrame:PointToObjectSpace(position)
+        if p.Z>=-0.001 then return nil end
+        local size=viewport.AbsoluteSize
+        local focal=size.Y/(2*math.tan(math.rad(camera.FieldOfView/2)))
+        return Vector2.new(size.X/2+p.X*focal/-p.Z,size.Y/2-p.Y*focal/-p.Z)
+    end
+    local function render()
+        if destroyed or not model or viewport.AbsoluteSize.Y<2 then return end
+        local cf,size=model:GetBoundingBox()
+        local aspect=math.max(viewport.AbsoluteSize.X/viewport.AbsoluteSize.Y,0.1)
+        local halfAngle=math.tan(math.rad(camera.FieldOfView/2))
+        local dist=math.max(size.Y/(2*halfAngle),size.X/(2*halfAngle*aspect))*1.15+size.Z/2
+        camera.CFrame=CFrame.lookAt(cf.Position+Vector3.new(0,0,-dist),cf.Position)
+        local low=Vector2.new(math.huge,math.huge); local high=Vector2.new(-math.huge,-math.huge)
+        for _,x in ipairs({-1,1}) do for _,y in ipairs({-1,1}) do for _,z in ipairs({-1,1}) do
+            local p=project(cf:PointToWorldSpace(Vector3.new(x*size.X/2,y*size.Y/2,z*size.Z/2)))
+            if p then
+                low=Vector2.new(math.min(low.X,p.X),math.min(low.Y,p.Y))
+                high=Vector2.new(math.max(high.X,p.X),math.max(high.Y,p.Y))
+            end
+        end end end
+        box.Visible=settings.Box and high.X>low.X
+        if box.Visible then box.Position=UDim2.fromOffset(low.X,low.Y); box.Size=UDim2.fromOffset(high.X-low.X,high.Y-low.Y) end
+        for _,entry in ipairs(lines) do
+            local a=point(entry.A); local b=point(entry.B)
+            local pa=a and project(a); local pb=b and project(b)
+            entry.Frame.Visible=settings.Skeleton and pa~=nil and pb~=nil
+            if pa and pb then
+                local delta=pb-pa; local midpoint=(pa+pb)/2
+                entry.Frame.Position=UDim2.fromOffset(midpoint.X,midpoint.Y)
+                entry.Frame.Size=UDim2.fromOffset(delta.Magnitude,settings.SkeletonThickness)
+                entry.Frame.Rotation=math.deg(math.atan2(delta.Y,delta.X))
+                entry.Frame.BackgroundColor3=settings.SkeletonColor
+            end
+        end
+    end
+    local function layout()
+        if destroyed then return end
+        local viewSize=screen.AbsoluteSize
+        local right=viewSize.X-(main.AbsolutePosition.X+main.AbsoluteSize.X)-settings.Gap-6
+        local left=main.AbsolutePosition.X-settings.Gap-6
+        local side=settings.Side
+        if side=="Auto" then side=(right>=settings.Width or right>=left) and "Right" or "Left" end
+        local available=side=="Right" and right or left
+        local width=math.min(settings.Width,math.max(0,available))
+        panel.Size=UDim2.fromOffset(width,main.AbsoluteSize.Y)
+        local dx=side=="Right" and (main.AbsoluteSize.X+settings.Gap) or (-width-settings.Gap)
+        panel.Position=UDim2.new(main.Position.X.Scale,main.Position.X.Offset+dx,
+            main.Position.Y.Scale,main.Position.Y.Offset)
+        panel.Visible=settings.Enabled and main.Visible and main.AbsoluteSize.Y>=180 and width>=120
+            and (not window.ContentFrame or window.ContentFrame.Visible)
+        panel.BackgroundColor3=COLORS.SECONDARY; header.BackgroundColor3=COLORS.PRIMARY
+        header.TextColor3=COLORS.TEXT; border.Color=COLORS.BORDER
+        nameLabel.TextColor3=COLORS.TEXT_MUTED; weapon.TextColor3=COLORS.TEXT
+        distance.TextColor3=COLORS.TEXT
+        render()
+    end
+    local function cleanup()
+        if destroyed then return end
+        destroyed=true; requestId=requestId+1
+        disconnectConnections(connections)
+        model=nil; provider=nil; table.clear(lines)
+        if window.ESPPreview==api then window.ESPPreview=nil end
+    end
+    function api.Destroy()
+        if destroyed then return end
+        cleanup(); panel:Destroy()
+    end
+    function api.IsDestroyed() return destroyed end
+    function api.SetSkeleton(edges)
+        if destroyed then return false,"Preview destroyed" end
+        if edges~=nil then
+            if type(edges)~="table" then return false,"Skeleton must be a list of name pairs" end
+            local copy={}
+            for i,edge in ipairs(edges) do
+                if i>128 then return false,"Skeleton is limited to 128 edges" end
+                if type(edge)~="table" or type(edge[1])~="string" or type(edge[2])~="string" then
+                    return false,"Skeleton endpoints must be part, attachment, or bone names"
+                end
+                table.insert(copy,{edge[1],edge[2]})
+            end
+            edges=copy
+        end
+        skeleton=edges; rebuildSkeleton(); render(); return true
+    end
+    function api.SetModel(source)
+        if destroyed then return false,"Preview destroyed" end
+        requestId=requestId+1
+        if typeof(source)~="Instance" or not source:IsA("Model") then return false,"Expected a Model" end
+        local clone=nil
+        local ok,err=pcall(function()
+            clone=source:Clone()
+            assert(clone,"Model is not Archivable; provide a cloneable template")
+            local descendants=clone:GetDescendants()
+            assert(#descendants<=2000,"Preview models are limited to 2000 descendants")
+            local partCount=0
+            for _,item in ipairs(descendants) do
+                if item:IsA("LuaSourceContainer") or item:IsA("Sound") or item:IsA("ParticleEmitter")
+                    or item:IsA("Trail") or item:IsA("Beam") or item:IsA("ClickDetector") or item:IsA("ProximityPrompt") then
+                    item:Destroy()
+                elseif item:IsA("BasePart") then
+                    partCount=partCount+1; item.Anchored=true; item.CanCollide=false
+                    item.CanTouch=false; item.CanQuery=false
+                end
+            end
+            assert(partCount>0,"Model has no visible geometry")
+            clone:PivotTo(CFrame.Angles(0,math.rad(settings.Rotation),0))
+            local _,size=clone:GetBoundingBox()
+            assert(size.Magnitude>0 and size.Magnitude<10000,"Invalid or oversized model bounds")
+        end)
+        if not ok then if clone then clone:Destroy() end; return false,tostring(err) end
+        clone.Parent=world
+        if model then model:Destroy() end
+        model=clone; rebuildSkeleton(); render()
+        return true
+    end
+    function api.RefreshModel()
+        if destroyed then return false,"Preview destroyed" end
+        if not provider then return false,"No custom model provider set" end
+        requestId=requestId+1; local token=requestId
+        local callback=type(provider)=="function" and provider or provider.GetModel
+        local ok,result=pcall(callback,window)
+        if destroyed or token~=requestId then return false,"Superseded provider request" end
+        if not ok then return false,tostring(result) end
+        local success,err=api.SetModel(result)
+        if success then
+            local edges=type(provider)=="table" and provider.Skeleton or nil
+            return api.SetSkeleton(edges)
+        end
+        return false,err
+    end
+    function api.SetProvider(value)
+        if destroyed then return false,"Preview destroyed" end
+        if type(value)~="function" and not (type(value)=="table" and type(value.GetModel)=="function") then
+            return false,"Provider must be a function or a table with GetModel(window)"
+        end
+        provider=value; return api.RefreshModel()
+    end
+    function api.SetOptions(values)
+        if destroyed or type(values)~="table" then return false end
+        for key,value in pairs(values) do
+            if settings[key]~=nil and typeof(value)==typeof(settings[key]) then settings[key]=value end
+        end
+        settings.Width=finite(settings.Width,280,160,600); settings.Gap=finite(settings.Gap,16,0,80)
+        settings.Health=finite(settings.Health,100,0,1e9); settings.MaxHealth=finite(settings.MaxHealth,100,1,1e9)
+        settings.TintTransparency=finite(settings.TintTransparency,0.55,0,1)
+        settings.SkeletonThickness=finite(settings.SkeletonThickness,2,1,8)
+        settings.Rotation=finite(settings.Rotation,0,-36000,36000)
+        if settings.Side~="Left" and settings.Side~="Right" then settings.Side="Auto" end
+        healthBack.Visible=settings.HealthBar
+        healthFill.Size=UDim2.fromScale(math.clamp(settings.Health/settings.MaxHealth,0,1),1)
+        healthFill.BackgroundColor3=settings.HealthColor
+        distance.Text=settings.Distance; nameLabel.Text=settings.Name; weapon.Text=settings.Weapon
+        weaponIcon.Image=settings.WeaponIcon; weaponIcon.Visible=settings.WeaponIcon~=""
+        weapon.Visible=not weaponIcon.Visible
+        tint.Visible=settings.Tint; tint.BackgroundColor3=settings.TintColor
+        tint.BackgroundTransparency=settings.TintTransparency; boxStroke.Color=settings.BoxColor
+        if model then model:PivotTo(CFrame.Angles(0,math.rad(settings.Rotation),0)) end
+        layout(); return true
+    end
+    function api.SetEnabled(value) return api.SetOptions({Enabled=value==true}) end
+    api.SetVisible=api.SetEnabled
+    function api.GetEnabled() return not destroyed and settings.Enabled end
+    function api.SetHealth(value,maximum) return api.SetOptions({Health=value,MaxHealth=maximum or settings.MaxHealth}) end
+    function api.SetDistance(value) return api.SetOptions({Distance=tostring(value or "")}) end
+    function api.SetName(value) return api.SetOptions({Name=tostring(value or "")}) end
+    function api.SetWeapon(value,icon) return api.SetOptions({Weapon=tostring(value or ""),WeaponIcon=tostring(icon or "")}) end
+    function api.SetRotation(value) return api.SetOptions({Rotation=value}) end
+    function api.GetModel() return model end -- preview clone only; never the source model
+    api.Frame=panel; api.Viewport=viewport; api.WorldModel=world; api.Camera=camera
+    window.ESPPreview=api
+    connect(panel.Destroying,cleanup)
+    connect(main.Destroying,api.Destroy)
+    for _,property in ipairs({"AbsolutePosition","AbsoluteSize","Visible"}) do
+        connect(main:GetPropertyChangedSignal(property),layout)
+    end
+    connect(screen:GetPropertyChangedSignal("AbsoluteSize"),layout)
+    connect(viewport:GetPropertyChangedSignal("AbsoluteSize"),render)
+    if window.ContentFrame then connect(window.ContentFrame:GetPropertyChangedSignal("Visible"),layout) end
+    -- Palette changes are rare; observe the main frame instead of polling.
+    connect(main:GetPropertyChangedSignal("BackgroundColor3"),layout)
+    api.SetOptions(options)
+    local dummy=createPreviewDummy()
+    local ok,err=api.SetModel(dummy); dummy:Destroy()
+    if not ok then warn("[GuiLibrary] Preview dummy failed: "..tostring(err)) end
+    if options.Model then
+        ok,err=api.SetModel(options.Model)
+        if not ok then warn("[GuiLibrary] Preview model failed: "..tostring(err)) end
+    end
+    if options.SkeletonMap then api.SetSkeleton(options.SkeletonMap) end
+    if options.Provider then
+        ok,err=api.SetProvider(options.Provider)
+        if not ok then warn("[GuiLibrary] Preview provider failed: "..tostring(err)) end
+    end
+    layout()
+    return api
+end
+
+function GuiLibrary:CreateWindow(title, size, iconAsset, options)
+    if type(options)=="boolean" then options={ESPPreview=options} end
+    options=type(options)=="table" and options or {}
     title=tostring(title or "GUI Library")
     if typeof(size)~="UDim2" then size=UDim2.new(0,600,0,400) end
     iconAsset = iconAsset or GuiLibrary.Icon
@@ -2499,7 +3012,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
         ScreenGui=sg, MainFrame=mf, ContentFrame=contentFrame,
         TabsContainer=tabsCont, TabContentContainer=tabContent,
         Tabs={}, CurrentTab=nil, CurrentSize=size, FPSLabel=fpsLbl,
-        LockPosition=false, SavedPosition=nil,
+        LockPosition=false, SavedPosition=nil, ESPPreview=nil,
     }
     GuiLibrary.CurrentWindow=window
     local isVisible=true
@@ -2713,6 +3226,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     local destroyed=false
     local function destroyWindow()
         if destroyed then return end
+        pcall(function() saveConfig(window,true) end)
         destroyed=true
         disconnectConnections(activeInputConnections)
         if GuiLibrary.CurrentWindow==window then GuiLibrary.CurrentWindow=nil end
@@ -2721,6 +3235,7 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     window.Destroy=destroyWindow
     table.insert(activeInputConnections,sg.Destroying:Connect(function()
         if destroyed then return end
+        pcall(function() saveConfig(window,true) end)
         destroyed=true
         disconnectConnections(activeInputConnections)
         if GuiLibrary.CurrentWindow==window then GuiLibrary.CurrentWindow=nil end
@@ -2757,6 +3272,15 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     window.Toggle=function() if isVisible then hideWindow() else showWindow() end end
     window.SetIcon=setIcon
     window.SetTitle=function(t) titleLbl.Text=tostring(t or "") end
+    window.SetESPPreview=function(enabled,previewOptions)
+        if destroyed then return nil end
+        if enabled then
+            return GuiLibrary:CreateESPPreview(window,previewOptions or {})
+        end
+        if window.ESPPreview then window.ESPPreview.SetEnabled(false) end
+        return window.ESPPreview
+    end
+    window.GetESPPreview=function() return window.ESPPreview end
     isInitializing=true
     GuiLibrary:CreateSettingsTab(window)
     GuiLibrary.LoadConfig(window)
@@ -2787,6 +3311,12 @@ function GuiLibrary:CreateWindow(title, size, iconAsset)
     local openInfo=TweenInfo.new(0.55,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
     TweenService:Create(mf,openInfo,{Size=sz, Position=UDim2.new(0,targetX,0,targetY)}):Play()
     updateElementColors(window)
+    -- Give the caller time to synchronously create its tabs/widgets. Any
+    -- constructor-triggered autosaves are coalesced and flushed afterward.
+    setupGraceUntil=os.clock()+3
+    local previewEnabled=options.ESPPreview
+    if previewEnabled==nil then previewEnabled=GuiLibrary.ESPPreviewEnabled end
+    if previewEnabled==true then window.SetESPPreview(true,options.PreviewOptions) end
     return window
 end
 function GuiLibrary:CreateTab(window, name)
@@ -2861,6 +3391,8 @@ end
 -- Idempotent teardown for reloads and callers that remove the whole library.
 -- Existing window.Destroy() remains available for single-window cleanup.
 function GuiLibrary:Destroy()
+    local current=GuiLibrary.CurrentWindow
+    if current then pcall(function() saveConfig(current,true) end) end
     disconnectConnections(activeInputConnections)
     disconnectConnections(libraryConnections)
     for gui in pairs(rootGuis) do
