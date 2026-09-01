@@ -871,6 +871,7 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     local listPad=Instance.new("UIPadding"); listPad.PaddingTop=UDim.new(0,4); listPad.PaddingBottom=UDim.new(0,4)
     listPad.PaddingLeft=UDim.new(0,4); listPad.PaddingRight=UDim.new(0,4); listPad.Parent=dropList
     local curOpts={table.unpack(options)}; local curSel=curOpts[1] or "None"; local isOpen=false
+    local closeToken=0
     local function getListRect()
         local btnAbs = dropBtn.AbsolutePosition
         local mfAbs  = mf and mf.AbsolutePosition or Vector2.new(0,0)
@@ -881,11 +882,23 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
         return relX, relY, w, h
     end
     local function closeInstant()
+        closeToken=closeToken+1
         isOpen=false; dropArrow.Text="v"; dropList.Visible=false
         dropList.Size=UDim2.new(0,dropList.Size.X.Offset,0,0)
         dropArrow.Rotation=0
     end
     dropdownClosers[dropFrame]=closeInstant
+    local function updateListPosition()
+        if not isOpen or not dropList.Parent then return end
+        local rx,ry,w=getListRect()
+        dropList.Position=UDim2.new(0,rx,0,ry)
+        dropList.Size=UDim2.new(0,w,0,dropList.Size.Y.Offset)
+    end
+    dropBtn:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateListPosition)
+    dropBtn:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateListPosition)
+    if tab.Content:IsA("ScrollingFrame") then
+        tab.Content:GetPropertyChangedSignal("CanvasPosition"):Connect(updateListPosition)
+    end
     local function buildOptions(opts)
         for _,c in ipairs(dropList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
         dropList.CanvasSize=UDim2.new(0,0,0,#opts*28+8)
@@ -907,9 +920,17 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
         end
     end
     buildOptions(curOpts)
-    dropBtn.MouseButton1Click:Connect(function()
-        isOpen=not isOpen
-        if isOpen then
+    local function setOpen(shouldOpen)
+        shouldOpen=shouldOpen==true
+        if shouldOpen==isOpen then
+            if shouldOpen then updateListPosition() end
+            return
+        end
+        if shouldOpen then
+            for frame,closer in pairs(dropdownClosers) do
+                if frame~=dropFrame then pcall(closer) end
+            end
+            closeToken=closeToken+1; isOpen=true
             local rx,ry,w,h=getListRect()
             dropList.Position=UDim2.new(0,rx,0,ry)
             dropList.Size=UDim2.new(0,w,0,0)
@@ -917,11 +938,16 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
             dropList.Visible=true
             createTween(dropArrow,{Rotation=180}); createTween(dropList,{Size=UDim2.new(0,w,0,h)})
         else
+            closeToken=closeToken+1; local token=closeToken; isOpen=false
             createTween(dropArrow,{Rotation=0})
             createTween(dropList,{Size=UDim2.new(0,dropList.Size.X.Offset,0,0)})
-            task.wait(ANIM_TIME); dropList.Visible=false; dropArrow.Rotation=0; isOpen=false
+            task.wait(ANIM_TIME)
+            if token==closeToken and not isOpen then
+                dropList.Visible=false; dropArrow.Rotation=0
+            end
         end
-    end)
+    end
+    dropBtn.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
     dropFrame.AncestryChanged:Connect(function()
         if not dropFrame:IsDescendantOf(game) then pcall(function() dropList:Destroy() end) end
     end)
@@ -962,7 +988,8 @@ function GuiLibrary:CreateDropdown(tab, text, options, callback)
     return {Frame=dropFrame, GetValue=function() return curSel end, SetValue=function(v)
         setVal(v)
         if not isInitializing then saveConfig(nil,false) end
-    end, UpdateOptions=updateOptions}
+    end, UpdateOptions=updateOptions, SetOpen=setOpen, Close=function() setOpen(false) end,
+        IsOpen=function() return isOpen end}
 end
 function GuiLibrary:CreateLabel(tab, text)
     if not tab or not tab.Content then warn("[GuiLibrary] CreateLabel: invalid tab"); return nil end
@@ -1528,6 +1555,7 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
     local curOpts={table.unpack(options)}
     local selected={}; for _,o in ipairs(defaults or {}) do selected[o]=true end
     local isOpen=false
+    local closeToken=0
     local function summary()
         local n=0; for _,v in pairs(selected) do if v then n=n+1 end end
         if n==0 then return text..":  none"
@@ -1544,10 +1572,22 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
         return btnAbs.X-mfAbs.X, btnAbs.Y-mfAbs.Y+dropBtn.AbsoluteSize.Y+6, w, h
     end
     local function closeInstant()
+        closeToken=closeToken+1
         isOpen=false; dropArrow.Text="v"; dropArrow.Rotation=0
         dropList.Visible=false; dropList.Size=UDim2.new(0,dropList.Size.X.Offset,0,0)
     end
     dropdownClosers[dropFrame]=closeInstant
+    local function updateListPosition()
+        if not isOpen or not dropList.Parent then return end
+        local rx,ry,w=getListRect()
+        dropList.Position=UDim2.new(0,rx,0,ry)
+        dropList.Size=UDim2.new(0,w,0,dropList.Size.Y.Offset)
+    end
+    dropBtn:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateListPosition)
+    dropBtn:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateListPosition)
+    if tab.Content:IsA("ScrollingFrame") then
+        tab.Content:GetPropertyChangedSignal("CanvasPosition"):Connect(updateListPosition)
+    end
     local function buildOptions()
         for _,c in ipairs(dropList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
         dropList.CanvasSize=UDim2.new(0,0,0,#curOpts*28+8)
@@ -1577,19 +1617,30 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
         end
     end
     buildOptions(); refreshLabel()
-    dropBtn.MouseButton1Click:Connect(function()
-        isOpen = not isOpen
-        if isOpen then
+    local function setOpen(shouldOpen)
+        shouldOpen=shouldOpen==true
+        if shouldOpen==isOpen then
+            if shouldOpen then updateListPosition() end
+            return
+        end
+        if shouldOpen then
+            for frame,closer in pairs(dropdownClosers) do
+                if frame~=dropFrame then pcall(closer) end
+            end
+            closeToken=closeToken+1; isOpen=true
             local rx,ry,w,h=getListRect()
             dropList.Position=UDim2.new(0,rx,0,ry); dropList.Size=UDim2.new(0,w,0,0)
             dropList.CanvasSize=UDim2.new(0,0,0,#curOpts*28+8); dropList.Visible=true
             createTween(dropArrow,{Rotation=180}); createTween(dropList,{Size=UDim2.new(0,w,0,h)})
         else
+            closeToken=closeToken+1; local token=closeToken; isOpen=false
             createTween(dropArrow,{Rotation=0})
             createTween(dropList,{Size=UDim2.new(0,dropList.Size.X.Offset,0,0)})
-            task.wait(ANIM_TIME); dropList.Visible=false
+            task.wait(ANIM_TIME)
+            if token==closeToken and not isOpen then dropList.Visible=false end
         end
-    end)
+    end
+    dropBtn.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
     dropFrame.AncestryChanged:Connect(function()
         if not dropFrame:IsDescendantOf(game) then
             pcall(function() dropList:Destroy() end)
@@ -1630,6 +1681,9 @@ function GuiLibrary:CreateMultiSelect(tab, text, options, defaults, callback)
             return ok
         end,
         UpdateOptions=updateOptions,
+        SetOpen=setOpen,
+        Close=function() setOpen(false) end,
+        IsOpen=function() return isOpen end,
     }
 end
 function GuiLibrary:CreateSearch(tab, placeholder, getItems, onPick)
